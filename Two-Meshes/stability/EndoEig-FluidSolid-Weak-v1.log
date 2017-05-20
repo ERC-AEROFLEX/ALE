@@ -1,0 +1,281 @@
+   77 :         ndofb=ndofbe;
+   78 :
+   79 :      complex[int,int] PPe(npdof,ndofbe);
+   80 :
+   81 :         for(int k=0; k<npdof; k++)
+   82 :         {
+   83 :             if(dfe[][k]==1)
+   84 :          {
+   85 :           PPe(k,kenew)=1; kenew+=1;
+   86 :          };
+   87 :         };
+   88 :
+   89 :         Pfe = PPe;
+   90 :         cout << "Pfe.n=" << Pfe.n << ", Pfe.m=" << Pfe.m << endl;
+   91 : };
+   92 :
+   93 : ndoft=ndoff+ndofs+ndofb;
+   94 :
+   95 :
+   96 : /////////////////////////////////////////////
+   97 : /////////////   Base Flow   /////////////////
+   98 : /////////////////////////////////////////////
+   99 :
+  100 : fuupf [u0,v0,p0];
+  101 : complex[int] dirvect(ndoft);
+  102 : complex[int] adjvect(ndoft);
+  103 :
+  104 : {
+  105 :  ifstream file("../baseflow/Baseflow1-Re-"+Re+"-L-"+L+"-H-"+H+".txt");
+  106 :  file >> u0[];
+  107 : };
+  108 :
+  109 : plot(u0,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Base-Flow");
+  110 :
+  111 : /////////////////////////////////////////////
+  112 : /////////////   Direct mode   ///////////////
+  113 : /////////////////////////////////////////////
+  114 :
+  115 :
+  116 : fuupf<complex> [udf,vdf,pdf];
+  117 : fuuuus<complex> [xds,yds,uds,vds];
+  118 : fppf<complex> [fd,gd];
+  119 :
+  120 : fuupf [ur,vr,pr];
+  121 : fuuuus [xsr,ysr,usr,vsr];
+  122 :
+  123 : {
+  124 :   ifstream file("UnstableDirMode-Re-"+Re+"-L-"+L+"-H-"+H+"-K-"+K+"-rho-"+rho+"-shift-"+imag(shift)+".dat",append);
+  125 :   file >> dirvect ;
+  126 : }
+  127 :
+  128 :
+  129 : /////////////////////////////////////////////
+  130 : /////////////   Adjoint mode   //////////////
+  131 : /////////////////////////////////////////////
+  132 :
+  133 : fuupf<complex> [uaf,vaf,paf];
+  134 : fuuuus<complex> [xas,yas,uas,vas];
+  135 : fppf<complex> [fa,ga];
+  136 :
+  137 : {
+  138 :   ifstream file("UnstableAdjMode-Re-"+Re+"-L-"+L+"-H-"+H+"-K-"+K+"-rho-"+rho+"-shift-"+imag(shift)+".dat",append);
+  139 :   file >> adjvect ;
+  140 : }
+  141 :
+  142 :
+  143 : /////////////////////////////////////////////
+  144 : ///////////////   Matrix B    ///////////////
+  145 : /////////////////////////////////////////////
+  146 :
+  147 : matrix<complex> B,Bff,Bss,Bee;
+  148 :
+  149 :  cout << "Construction of B " << endl;
+  150 :
+  151 :  varf vmatBff([du,dv,dp],[ut,vt,pt])=
+  152 :  int2d(thf)( du*ut+dv*vt );
+  153 :
+  154 :  varf vmatBss([xs,ys,us,vs],[xst,yst,ust,vst]) =
+  155 :  int2d(ths)( xs*xst+ys*yst+us*ust+vs*vst );
+  156 :
+  157 :  varf vmatBee([us,vs],[ust,vst]) =
+  158 :  int1d(thf,FE)( 0.*(us*ust+vs*vst) );
+  159 :
+  160 :
+  161 :  Bff = vmatBff(fuupf,fuupf);
+  162 :  Bss = vmatBss(fuuuus,fuuuus);
+  163 :  {
+  164 :   matrix<complex> Bt = vmatBee(fppf,fppf);
+  165 :   matrix<complex> Btt = Pfe'*Bt;
+  166 :   Bee=Btt*Pfe;
+  167 :  };
+  168 :
+  169 :  B=[ [ Bff ,  0  ,   0],
+  170 :     [  0 ,       Bss ,   0],
+  171 :     [   0 ,  0  , Bee]];
+  172 :
+  173 :
+  174 :
+  175 :  cout << "Fin Assemblage B" << endl;
+  176 :
+  177 :
+  178 : /////////////////////////////////////////////
+  179 : /////////  Normalization mode    ////////////
+  180 : /////////////////////////////////////////////
+  181 :
+  182 : complex[int] temp(ndoft);
+  183 :
+  184 : complex Normed;
+  185 :
+  186 : udf[]=dirvect(0:ndoff-1);
+  187 : xds[]=dirvect(ndoff:ndoff+ndofs-1);
+  188 : fd[]=Pfe*dirvect(ndoff+ndofs:ndoft-1);
+  189 :
+  190 : [ur,vr,pr]=[real(udf),real(vdf),real(pdf)];
+  191 : [xsr,ysr,usr,vsr]=[real(xds),real(yds),real(uds),real(vds)];
+  192 :
+  193 : plot(ur,usr,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Mode-u-Direct");
+  194 :
+  195 : plot(vr,vsr,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Mode-v-Direct");
+  196 :
+  197 :
+  198 : cout << "Normalisation Mode direct" << endl;
+  199 :
+  200 : temp=B*dirvect;
+  201 : Normed=dirvect'*temp;
+  202 : cout << "Normed= " << Normed << endl;
+  203 : dirvect*=1./sqrt(real(Normed));
+  204 : temp=B*dirvect;
+  205 : Normed=dirvect'*temp;
+  206 : cout << "Normed= " << Normed << endl;
+  207 :
+  208 : udf[]=dirvect(0:ndoff-1);
+  209 : xds[]=dirvect(ndoff:ndoff+ndofs-1);
+  210 : fd[]=Pfe*dirvect(ndoff+ndofs:ndoft-1);
+  211 :
+  212 : [ur,vr,pr]=[real(udf),real(vdf),real(pdf)];
+  213 : [xsr,ysr,usr,vsr]=[real(xds),real(yds),real(uds),real(vds)];
+  214 :
+  215 : plot(ur,usr,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Mode-u-Direct");
+  216 :
+  217 : plot(vr,vsr,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Mode-v-Direct");
+  218 :
+  219 :
+  220 :
+  221 : cout << "Normalisation Mode Adjoint" << endl;
+  222 :
+  223 : complex Normea;
+  224 : temp=B*dirvect;
+  225 : Normea=adjvect'*temp;
+  226 : cout << "Normea= " << Normea << endl;
+  227 : adjvect*=1./conj(Normea);
+  228 : temp=B*dirvect;
+  229 : Normea=adjvect'*temp;
+  230 : cout << "Normea= " << Normea << endl;
+  231 :
+  232 : uaf[]=adjvect(0:ndoff-1);
+  233 : xas[]=adjvect(ndoff:ndoff+ndofs-1);
+  234 : fa[]=Pfe*adjvect(ndoff+ndofs:ndoft-1);
+  235 :
+  236 : [ur,vr,pr]=[real(uaf),real(vaf),real(paf)];
+  237 :
+  238 : [ur,vr,pr]=[real(uaf),real(vaf),real(paf)];
+  239 : [xsr,ysr,usr,vsr]=[real(xas),real(yas),real(uas),real(vas)];
+  240 :
+  241 : plot(ur,usr,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Mode-u-Adjoint");
+  242 :
+  243 : plot(vr,vsr,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Mode-v-Adjoint");
+  244 :
+  245 :
+  246 :
+  247 : /////////////////////////////////////////////
+  248 : ///////////////   Matrix A    ///////////////
+  249 : /////////////////////////////////////////////
+  250 : ///////   A= [ Aff ,   0 , Afeb]  ///////////
+  251 : ///////    [0   , Ass , Aseb]  ///////////
+  252 : ///////      [Aebf, Aebs ,   0]   ///////////
+  253 : /////////////////////////////////////////////
+  254 : /////////////////////////////////////////////
+  255 :
+  256 : complex endoff,endofeb,endof;
+  257 : complex endoss,endoseb,endos;
+  258 : complex endoebf,endoebs,endoeb;
+  259 : complex endo;
+  260 :
+  261 : fuupf<complex> [euff,evff,epff];
+  262 : fuupf<complex> [eufeb,evfeb,epfeb];
+  263 : fuuuus<complex> [exss,eyss,euss,evss];
+  264 : fuuuus<complex> [exseb,eyseb,euseb,evseb];
+  265 : fppf<complex> [febf,gebf];
+  266 : fppf<complex> [febs,gebs];
+  267 :
+  268 : varf vmatff([du,dv,dp],[ut,vt,pt])=
+  269 : int2d(thf)(-( udf*dx(u0)+vdf*dy(u0) + u0*dx(udf)+v0*dy(udf) )*ut
+  270 :                 -( udf*dx(v0)+vdf*dy(v0) + u0*dx(vdf)+v0*dy(vdf) )*vt
+  271 :                 - 2*nu*(dx(udf)*dx(ut)+dy(vdf)*dy(vt))
+  272 :              - nu*(dx(vdf)+dy(udf))*(dy(ut)+dx(vt))
+  273 :                 + (dx(ut)+dy(vt))*pdf
+  274 :                 + (dx(udf)+dy(vdf))*pt)
+  275 :                 + on(4,dv=vdf) + on(1,FR,du=udf,dv=vdf);
+  276 :
+  277 : varf vmatfeb([df,dg],[ut,vt,pt])
+  278 : =int1d(thf,FE)( -fd*ut - gd*vt );
+  279 :
+  280 : euff[]=vmatff(0,fuupf,tgv=1);
+  281 : endoff=uaf[]'*euff[];
+  282 : cout << "---------------------------------------" << endl;
+  283 : cout << " endoff  -- " << real(endoff) << " -- " << imag(endoff) << endl;
+  284 : eufeb[]=vmatfeb(0,fuupf,tgv=1);
+  285 : endofeb=uaf[]'*eufeb[];
+  286 : cout << " endofeb -- " << real(endofeb) << " -- " << imag(endofeb) << endl;
+  287 : endof=endoff+endofeb;
+  288 : cout << " endof -- " << real(endof) << " -- " << imag(endof) << endl;
+  289 : cout << "---------------------------------------" << endl;
+  290 :
+  291 : varf vmatss([dxs,dys,dus,dvs],[xst,yst,ust,vst]) =
+  292 : int2d(ths)(
+  293 :     - rho*Lambda*(dx(xds)+dy(yds))*(dx(ust)+dy(vst))
+  294 :     - rho*Mu*( dx(xds)*dx(ust) + dx(yds)*dx(vst) + dy(xds)*dy(ust) + dy(yds)*dy(vst) )
+  295 :     - rho*Mu*( dx(xds)*dx(ust) + dy(xds)*dx(vst) + dx(yds)*dy(ust) + dy(yds)*dy(vst) )
+  296 :     + uds*xst + vds*yst )
+  297 :     + on(ER,dxs=1,dys=1,dus=1,dvs=1);
+  298 :
+  299 : varf vmatseb([df,dg],[t,yst,ust,vst])
+  300 : = int1d(thf,FE)(rho*(fd*ust+gd*vst));
+  301 :
+  302 : exss[]=vmatss(0,fuuuus,tgv=1);
+  303 : endoss=xas[]'*exss[];
+  304 : cout << " endoss  -- " << real(endoss) << " -- " << imag(endoss) << endl;
+  305 : exseb[]=vmatseb(0,fuuuus,tgv=1);
+  306 : endoseb=xas[]'*exseb[];
+  307 : cout << " endoseb -- " << real(endoseb) << " -- " << imag(endoseb) << endl;
+  308 : endos=endoss+endoseb;
+  309 : cout << " endos -- " << real(endos) << " -- " << imag(endos) << endl;
+  310 : cout << "---------------------------------------" << endl;
+  311 :
+  312 :
+  313 : varf vmatebf([duf,dvf,dpf],[ft,gt]) = int1d(thf,FE)(-udf*ft-vdf*gt);
+ 
+  314 :
+  315 : varf vmatebs([dxs,dys,dus,dvs],[ft,gt])
+  316 : = int1d(thf,FE)( (uds   -  xds*dx(u0) - yds*dy(u0) )*ft
+  317 :                         +(vds - xds*dx(v0) - yds*dy(v0) )*gt );
+  318 :
+  319 :
+  320 : febf[]=vmatebf(0,fppf,tgv=1);
+  321 : endoebf=fa[]'*febf[];
+  322 : cout << " endoebf -- " << real(endoebf) << " -- " << imag(endoebf) << endl;
+  323 : febs[]=vmatebs(0,fppf,tgv=1);
+  324 : endoebs=fa[]'*febs[];
+  325 : cout << " endoebs -- " << real(endoebs) << " -- " << imag(endoebs) << endl;
+  326 : endoeb=endoebf+endoebs;
+  327 : cout << " endoeb -- " << real(endoeb) << " -- " << imag(endoeb) << endl; 
+  328 : cout << "---------------------------------------" << endl;
+  329 : endo=endof+endos+endoeb;
+  330 : cout << " endo   -- " << real(endo) << " -- " << imag(endo) << endl;
+  331 :
+  332 :
+  333 : cout << "---------------------------------------" << endl;
+  334 :
+  335 :  sizestack + 1024 =8192  ( 7168 )
+ 
+--- Re        =  100
+--- rhos/rhof =  84.7458
+--- K         =  0.044
+--- Lame-L    =  0
+--- Lame-M    =  9777.78
+-------------------------------------------------------
+--- shift  = (0,1.25664)
+-------------------------------------------------------
+  --  mesh:  Nb of Triangles =  33160, Nb of Vertices 16933
+  --  mesh:  Nb of Triangles =   2754, Nb of Vertices 1605
+FS.n= 268104, FS.m= 23852
+Pfe.n=33866, Pfe.m=898
+ length on the array 150985 != 117119 length in file
+  current line = 106
+Exec error : Fatal Error: incompatible length in read array (Op_ReadKN)
+   -- number :1
+Exec error : Fatal Error: incompatible length in read array (Op_ReadKN)
+   -- number :1
+ err code 7 ,  mpirank 0
+ try getConsole D:\marquet\Documents\Etudes\FSIstability\Two-Meshes\stability\EndoEig-FluidSolid-Weak-v1.edp

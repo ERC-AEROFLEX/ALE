@@ -1,0 +1,334 @@
+// Condition limite sur FR (fluid/rigide) = forte
+// Condition limite sur FE (fluid/elastic) = faible
+ 
+load "MUMPS_seq"
+load "thresholdings"
+
+
+//Parametres adimensiones physiques
+
+real L=2.0;           // Length of the filament  
+real H=0.06;          // Thickness of the filament
+real Re=100;           // Nombre de Reynolds
+real K=0.044;		// Bending stiffness
+real rho=0.0118;	// Density ratio rhof/rhos
+real Lambda=0;		// Lame coefficient
+real Mu=K*(L/H)^3*6; // Lame coefficient
+real nu=1./Re;
+
+
+//Parametres numeriques
+int FR=2;
+int FE=22;
+int ER=222;
+
+real nev=10; // Nombre de valeurs propres
+int iwrite=0; // Ecriture vecteur propres
+complex shift=0.0+(2*pi*0.2)*1i;
+real tolthres=1.e-14;
+
+
+cout << "--- Re        =  " << Re << endl;
+cout << "--- rhos/rhof =  " << 1./rho << endl;
+cout << "--- K         =  " << K << endl;
+cout << "--- Lame-L    =  " << Lambda << endl;
+cout << "--- Lame-M    =  " << Mu << endl;
+cout << "-------------------------------------------------------" << endl;
+
+
+cout << "--- shift  = " << shift << endl;
+cout << "-------------------------------------------------------" << endl;
+
+mesh thf=readmesh("../mesh/meshF-L-"+L+"-H-"+H+".msh");
+mesh ths=readmesh("../mesh/meshS-L-"+L+"-H-"+H+".msh");
+
+fespace fuupf(thf,[P2,P2,P1]);
+fespace fppf(thf,[P1,P1]);
+fespace fuuuuf(thf,[P2,P2,P2,P2]); 
+fespace fuuuus(ths,[P2,P2,P2,P2]); 
+
+
+/////////  Interpolation matrix ///////////////
+
+matrix<complex> FS;
+
+{
+matrix FSR=interpolate(fuuuuf,fuuuus); FS = FSR;
+cout << "FS.n= " << FS.n << ", FS.m= " << FS.m << endl; 
+};
+
+
+matrix<complex> Pfe;
+fppf [dfe,dge];
+int ndofb,ndofbe,ndoff,ndofs,ndoft;
+
+ndoff=fuupf.ndof;
+ndofs=fuuuus.ndof;
+
+{
+	int npdof = fppf.ndof;	
+     int kenew=0;
+	ndofbe=0.;
+
+     varf vone([df,dg],[dft,dgt]) = on(FE,df=1,dg=1);
+	dfe[]=vone(0,fppf,tgv=1);
+     
+	ndofbe=dfe[].sum; 
+	ndofb=ndofbe;
+	
+     complex[int,int] PPe(npdof,ndofbe);
+
+        for(int k=0; k<npdof; k++)
+        {        
+	    if(dfe[][k]==1)
+         {
+          PPe(k,kenew)=1; kenew+=1;
+         };
+        };
+        
+	Pfe = PPe;
+	cout << "Pfe.n=" << Pfe.n << ", Pfe.m=" << Pfe.m << endl; 
+};
+
+ndoft=ndoff+ndofs+ndofb;
+
+		
+/////////////////////////////////////////////
+/////////////   Base Flow   /////////////////
+/////////////////////////////////////////////
+
+fuupf [u0,v0,p0];
+complex[int] dirvect(ndoft);
+complex[int] adjvect(ndoft);
+
+{
+ ifstream file("../baseflow/Baseflow1-Re-"+Re+"-L-"+L+"-H-"+H+".txt");
+ file >> u0[];
+};
+
+plot(u0,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Base-Flow");
+
+/////////////////////////////////////////////
+/////////////   Direct mode   ///////////////
+/////////////////////////////////////////////
+
+
+fuupf<complex> [udf,vdf,pdf];
+fuuuus<complex> [xds,yds,uds,vds];
+fppf<complex> [fd,gd];
+
+fuupf [ur,vr,pr];
+fuuuus [xsr,ysr,usr,vsr];
+
+{
+  ifstream file("UnstableDirMode-Re-"+Re+"-L-"+L+"-H-"+H+"-K-"+K+"-rho-"+rho+"-shift-"+imag(shift)+".dat",append);
+  file >> dirvect ;
+} 
+
+
+/////////////////////////////////////////////
+/////////////   Adjoint mode   //////////////
+/////////////////////////////////////////////
+
+fuupf<complex> [uaf,vaf,paf];
+fuuuus<complex> [xas,yas,uas,vas];
+fppf<complex> [fa,ga];
+
+{
+  ifstream file("UnstableAdjMode-Re-"+Re+"-L-"+L+"-H-"+H+"-K-"+K+"-rho-"+rho+"-shift-"+imag(shift)+".dat",append);
+  file >> adjvect ;
+} 
+
+
+/////////////////////////////////////////////
+///////////////   Matrix B    ///////////////
+/////////////////////////////////////////////
+
+matrix<complex> B,Bff,Bss,Bee;
+
+ cout << "Construction of B " << endl;
+ 
+ varf vmatBff([du,dv,dp],[ut,vt,pt])=
+ int2d(thf)( du*ut+dv*vt );
+ 
+ varf vmatBss([xs,ys,us,vs],[xst,yst,ust,vst]) =
+ int2d(ths)( xs*xst+ys*yst+us*ust+vs*vst );
+ 
+ varf vmatBee([us,vs],[ust,vst]) =
+ int1d(thf,FE)( 0.*(us*ust+vs*vst) );
+
+
+ Bff = vmatBff(fuupf,fuupf);
+ Bss = vmatBss(fuuuus,fuuuus);
+ {
+  matrix<complex> Bt = vmatBee(fppf,fppf);
+  matrix<complex> Btt = Pfe'*Bt;
+  Bee=Btt*Pfe;
+ };
+ 
+ B=[ [ Bff ,  0  ,   0],
+    [  0 ,	 Bss ,   0],
+    [   0 ,  0  , Bee]];
+
+
+
+ cout << "Fin Assemblage B" << endl;
+
+
+/////////////////////////////////////////////
+/////////  Normalization mode    ////////////
+/////////////////////////////////////////////
+
+complex[int] temp(ndoft);
+
+complex Normed;
+
+udf[]=dirvect(0:ndoff-1);
+xds[]=dirvect(ndoff:ndoff+ndofs-1);
+fd[]=Pfe*dirvect(ndoff+ndofs:ndoft-1);
+
+[ur,vr,pr]=[real(udf),real(vdf),real(pdf)];
+[xsr,ysr,usr,vsr]=[real(xds),real(yds),real(uds),real(vds)];
+
+plot(ur,usr,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Mode-u-Direct");
+
+plot(vr,vsr,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Mode-v-Direct");
+
+
+cout << "Normalisation Mode direct" << endl;
+
+temp=B*dirvect;
+Normed=dirvect'*temp;
+cout << "Normed= " << Normed << endl;
+dirvect*=1./sqrt(real(Normed));
+temp=B*dirvect;
+Normed=dirvect'*temp;
+cout << "Normed= " << Normed << endl;
+
+udf[]=dirvect(0:ndoff-1);
+xds[]=dirvect(ndoff:ndoff+ndofs-1);
+fd[]=Pfe*dirvect(ndoff+ndofs:ndoft-1);
+
+[ur,vr,pr]=[real(udf),real(vdf),real(pdf)];
+[xsr,ysr,usr,vsr]=[real(xds),real(yds),real(uds),real(vds)];
+
+plot(ur,usr,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Mode-u-Direct");
+
+plot(vr,vsr,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Mode-v-Direct");
+
+
+
+cout << "Normalisation Mode Adjoint" << endl;
+
+complex Normea;
+temp=B*dirvect;
+Normea=adjvect'*temp;
+cout << "Normea= " << Normea << endl;
+adjvect*=1./conj(Normea);
+temp=B*dirvect;
+Normea=adjvect'*temp;
+cout << "Normea= " << Normea << endl;
+
+uaf[]=adjvect(0:ndoff-1);
+xas[]=adjvect(ndoff:ndoff+ndofs-1);
+fa[]=Pfe*adjvect(ndoff+ndofs:ndoft-1);
+
+[ur,vr,pr]=[real(uaf),real(vaf),real(paf)];
+
+[ur,vr,pr]=[real(uaf),real(vaf),real(paf)];
+[xsr,ysr,usr,vsr]=[real(xas),real(yas),real(uas),real(vas)];
+
+plot(ur,usr,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Mode-u-Adjoint");
+
+plot(vr,vsr,value=1,wait=1,fill=1,bb=[[-1,-5],[9,5]],cmm="Mode-v-Adjoint");
+
+
+
+/////////////////////////////////////////////
+///////////////   Matrix A    ///////////////
+/////////////////////////////////////////////
+///////   A= [ Aff ,   0 , Afeb]  ///////////
+///////	   [0   , Ass , Aseb]  ///////////
+///////      [Aebf, Aebs ,   0]   ///////////
+/////////////////////////////////////////////
+/////////////////////////////////////////////
+
+complex endoff,endofeb,endof;
+complex endoss,endoseb,endos;
+complex endoebf,endoebs,endoeb;
+complex endo;
+
+fuupf<complex> [euff,evff,epff];
+fuupf<complex> [eufeb,evfeb,epfeb];
+fuuuus<complex> [exss,eyss,euss,evss];
+fuuuus<complex> [exseb,eyseb,euseb,evseb];
+fppf<complex> [febf,gebf];
+fppf<complex> [febs,gebs];
+
+varf vmatff([du,dv,dp],[ut,vt,pt])=
+int2d(thf)(-( udf*dx(u0)+vdf*dy(u0) + u0*dx(udf)+v0*dy(udf) )*ut
+		-( udf*dx(v0)+vdf*dy(v0) + u0*dx(vdf)+v0*dy(vdf) )*vt
+		- 2*nu*(dx(udf)*dx(ut)+dy(vdf)*dy(vt))
+	     - nu*(dx(vdf)+dy(udf))*(dy(ut)+dx(vt))
+		+ (dx(ut)+dy(vt))*pdf
+		+ (dx(udf)+dy(vdf))*pt)
+		+ on(4,dv=vdf) + on(1,FR,du=udf,dv=vdf);
+
+varf vmatfeb([df,dg],[ut,vt,pt])
+=int1d(thf,FE)( -fd*ut - gd*vt );
+
+euff[]=vmatff(0,fuupf,tgv=1);
+endoff=uaf[]'*euff[];
+cout << "---------------------------------------" << endl;
+cout << " endoff  -- " << real(endoff) << " -- " << imag(endoff) << endl;
+eufeb[]=vmatfeb(0,fuupf,tgv=1);
+endofeb=uaf[]'*eufeb[];
+cout << " endofeb -- " << real(endofeb) << " -- " << imag(endofeb) << endl;
+endof=endoff+endofeb;
+cout << " endof -- " << real(endof) << " -- " << imag(endof) << endl;
+cout << "---------------------------------------" << endl;
+
+varf vmatss([dxs,dys,dus,dvs],[xst,yst,ust,vst]) =
+int2d(ths)( 
+    - rho*Lambda*(dx(xds)+dy(yds))*(dx(ust)+dy(vst))
+    - rho*Mu*( dx(xds)*dx(ust) + dx(yds)*dx(vst) + dy(xds)*dy(ust) + dy(yds)*dy(vst) )
+    - rho*Mu*( dx(xds)*dx(ust) + dy(xds)*dx(vst) + dx(yds)*dy(ust) + dy(yds)*dy(vst) )
+    + uds*xst + vds*yst )
+    + on(ER,dxs=1,dys=1,dus=1,dvs=1);
+
+varf vmatseb([df,dg],[t,yst,ust,vst]) 
+= int1d(thf,FE)(rho*(fd*ust+gd*vst));
+
+exss[]=vmatss(0,fuuuus,tgv=1);
+endoss=xas[]'*exss[];
+cout << " endoss  -- " << real(endoss) << " -- " << imag(endoss) << endl;
+exseb[]=vmatseb(0,fuuuus,tgv=1);
+endoseb=xas[]'*exseb[];
+cout << " endoseb -- " << real(endoseb) << " -- " << imag(endoseb) << endl;
+endos=endoss+endoseb;
+cout << " endos -- " << real(endos) << " -- " << imag(endos) << endl;
+cout << "---------------------------------------" << endl;
+
+
+varf vmatebf([duf,dvf,dpf],[ft,gt]) = int1d(thf,FE)(-udf*ft-vdf*gt);	
+
+varf vmatebs([dxs,dys,dus,dvs],[ft,gt]) 
+= int1d(thf,FE)( (uds	-  xds*dx(u0) - yds*dy(u0) )*ft 
+			+(vds - xds*dx(v0) - yds*dy(v0) )*gt );
+
+
+febf[]=vmatebf(0,fppf,tgv=1);
+endoebf=fa[]'*febf[];
+cout << " endoebf -- " << real(endoebf) << " -- " << imag(endoebf) << endl;
+febs[]=vmatebs(0,fppf,tgv=1);
+endoebs=fa[]'*febs[];
+cout << " endoebs -- " << real(endoebs) << " -- " << imag(endoebs) << endl;
+endoeb=endoebf+endoebs;
+cout << " endoeb -- " << real(endoeb) << " -- " << imag(endoeb) << endl;
+cout << "---------------------------------------" << endl;
+endo=endof+endos+endoeb;
+cout << " endo   -- " << real(endo) << " -- " << imag(endo) << endl;
+
+
+cout << "---------------------------------------" << endl;
+

@@ -1,0 +1,274 @@
+// Condition limite sur FR (fluid/rigide) = forte
+// Condition limite sur FE (fluid/elastic) = faible
+ 
+load "MUMPS_seq"
+load "thresholdings"
+
+
+//Parametres adimensiones physiques
+
+real L=2.0;           // Length of the filament  
+real H=0.06;          // Thickness of the filament
+real Re=100;           // Nombre de Reynolds
+real K=0.045;		// Bending stiffness
+real rho=0.0118;	// Density ratio rhof/rhos
+real Lambda=0;		// Lame coefficient
+real Mu=K*(L/H)^3*6; // Lame coefficient
+real nu=1./Re;
+real freqs=0.0;
+complex shift=0.0+(2*pi*freqs)*1i;
+
+//Parametres numeriques
+int FR=2;
+int FE=22;
+int ER=222;
+
+real nev=10; // Nombre de valeurs propres
+int iwrite=0; // Ecriture vecteur propres
+real tolthres=1.e-14;
+real tgv1=-1;
+
+cout << "--- Re        =  " << Re << endl;
+cout << "--- rhos/rhof =  " << 1./rho << endl;
+cout << "--- K         =  " << K << endl;
+cout << "--- Lame-L    =  " << Lambda << endl;
+cout << "--- Lame-M    =  " << Mu << endl;
+cout << "-------------------------------------------------------" << endl;
+
+cout << "--- shift  = " << freqs << endl;
+cout << "-------------------------------------------------------" << endl;
+
+mesh thf=readmesh("../mesh/meshF-L-"+L+"-H-"+H+".msh");
+mesh ths=readmesh("../mesh/meshS-L-"+L+"-H-"+H+".msh");
+
+func  Pku=P2;
+func  Pkp=P1;
+
+fespace fuupf(thf,[Pku,Pku,Pkp]);
+fespace fppf(thf,[Pkp,Pkp]);
+fespace fuuuuf(thf,[Pku,Pku,Pku,Pku]); 
+fespace fuuuus(ths,[Pku,Pku,Pku,Pku]); 
+
+int ndofe,ndoff,ndofs,ndoft;
+ndoff=fuupf.ndof; 
+ndofs=fuuuus.ndof;
+		
+fuupf [u0,v0,p0];
+
+matrix<complex> FS,Pfe,A,B;
+
+{
+ ifstream file("../baseflow/Baseflow1-Re-"+Re+"-L-"+L+"-H-"+H+".txt");
+ file >> u0[];
+};
+
+/////////  Interpolation matrix ///////////////
+
+
+{
+matrix FSR=interpolate(fuuuuf,fuuuus); FS = FSR;
+};
+
+/////////// Operateur de Prolongation /////////////
+
+{
+	fppf [dfe,dge];
+	int npdof = fppf.ndof;	
+     int kenew=0; ndofe=0.;
+
+     varf vone([df,dg],[dft,dgt]) = on(FE,df=1,dg=1);
+	dfe[]=vone(0,fppf,tgv=1);
+     ndofe=dfe[].sum; 
+	
+     complex[int,int] PPe(npdof,ndofe);
+
+        for(int k=0; k<npdof; k++)
+        {        
+	    if(dfe[][k]==1)
+         {
+          PPe(k,kenew)=1; kenew+=1;
+         };
+        };
+        
+	Pfe = PPe;
+};
+
+ndoft=ndoff+ndofs+ndofe;
+
+cout << "ndof-fluid   = " << ndoff << endl;
+cout << "ndof-elastic = " << ndofe << endl;
+cout << "ndof-solid   = " << ndofs << endl;
+cout << "ndof-total   = " << ndoft << endl;
+
+//////////////////////////////////////////////////////
+
+{
+
+cout << "Construction Matrix A-shift B" << endl;
+
+///////// First line/ Fluid equation /////////////////
+
+varf vmatff([du,dv,dp],[ut,vt,pt])=
+int2d(thf)( - shift*(du*ut+dv*vt) 
+		-( du*dx(u0)+dv*dy(u0) + u0*dx(du)+v0*dy(du) )*ut
+		-( du*dx(v0)+dv*dy(v0) + u0*dx(dv)+v0*dy(dv) )*vt
+		- 2*nu*(dx(du)*dx(ut)+dy(dv)*dy(vt))
+	     - nu*(dx(dv)+dy(du))*(dy(ut)+dx(vt))
+		+ (dx(ut)+dy(vt))*dp
+		+ (dx(du)+dy(dv))*pt)
+		+ on(4,dv=1.) + on(1,FR,du=1.,dv=1.);
+
+varf vmatfeb([df,dg],[ut,vt,pt])
+=int1d(thf,FE)( -df*ut - dg*vt );
+
+matrix<complex> Aff,Afeb;
+
+
+Aff = vmatff(fuupf,fuupf,solver=GMRES,tgv=tgv1);
+
+{
+matrix<complex> At = vmatfeb(fppf,fuupf); Afeb = At*Pfe;
+};
+
+///////// 3rd line: Elastic boundary equation ////////////
+
+
+matrix<complex> Aebs,Aebf;
+
+varf vmatebf([duf,dvf,dpf],[ft,gt]) = int1d(thf,FE)(-duf*ft-dvf*gt);	
+  
+varf vmatebs([dxs,dys,dus,dvs],[ft,gt]) 
+= int1d(thf,FE)( (dus - dxs*dx(u0) - dys*dy(u0) )*ft 
+			+(dvs - dxs*dx(v0) - dys*dy(v0) )*gt );
+
+{
+matrix<complex> At = vmatebf(fuupf,fppf); 
+Aebf=Pfe'*At;
+};
+
+{
+matrix<complex> Atf = vmatebs(fuuuuf,fppf);
+matrix<complex> Ats =Atf*FS;
+Aebs=Pfe'*Ats;
+};
+
+///////// 2nd line: Elastic solid equation /////////////////
+
+matrix<complex> Ass,Aseb;
+
+varf vmatss([dxs,dys,dus,dvs],[xst,yst,ust,vst]) =
+int2d(ths)( 
+    - shift*(dxs*xst+dys*yst+dus*ust+dvs*vst)
+    - rho*Lambda*(dx(dxs)+dy(dys))*(dx(ust)+dy(vst))
+    - rho*Mu*( dx(dxs)*dx(ust) + dx(dys)*dx(vst) + dy(dxs)*dy(ust) + dy(dys)*dy(vst) )
+    - rho*Mu*( dx(dxs)*dx(ust) + dy(dxs)*dx(vst) + dx(dys)*dy(ust) + dy(dys)*dy(vst) )
+    + dus*xst + dvs*yst )
+    + on(ER,dxs=1,dys=1,dus=1,dvs=1);
+
+varf vmatseb([df,dg],[xst,yst,ust,vst]) 
+= int1d(thf,FE)(rho*(df*ust+dg*vst));
+
+Ass=vmatss(fuuuus,fuuuus,solver=GMRES,tgv=tgv1);
+
+{
+matrix<complex> Atf = vmatseb(fppf,fuuuuf); 
+matrix<complex> Ats =FS'*Atf;
+Aseb=Ats*Pfe;
+};
+
+cout << "Assemblage Matrix A-shiftB" << endl;
+
+A=[ [ Aff ,   0 , Afeb],
+	[0   , Ass , Aseb],
+     [Aebf, Aebs ,   0]];
+      		
+cout << "Construction Matrix B " << endl;
+
+varf vmatBff([du,dv,dp],[ut,vt,pt])=
+int2d(thf)( du*ut+dv*vt );
+
+varf vmatBss([xs,ys,us,vs],[xst,yst,ust,vst]) =
+int2d(ths)( xs*xst+ys*yst+us*ust+vs*vst );
+
+varf vmatBee([us,vs],[ust,vst]) =
+int1d(thf,FE)( 0.*(us*ust+vs*vst) );
+
+matrix<complex> Bff,Bss,Bee;
+
+Bff = vmatBff(fuupf,fuupf);
+Bss = vmatBss(fuuuus,fuuuus);
+{
+matrix<complex> Bt = vmatBee(fppf,fppf);
+matrix<complex> Btt = Pfe'*Bt;
+Bee=Btt*Pfe;
+};
+
+ 
+cout << "Assemblage B" << endl;
+
+B=[ [ Bff ,  0  ,   0],
+    [  0 ,	 Bss ,   0],
+    [   0 ,  0  , Bee]];
+
+};
+
+cout << "Factorisation A- shift B " << endl;
+verbosity=10;
+set(A,solver=sparsesolver);
+verbosity=0;
+
+complex[int] eig(nev); // to store nev eigein value
+complex[int,int] vect(ndoft,nev);   // to store nev eigen vector
+
+cout << "Solve Eigenvalue Problem " << endl;
+
+int kk=EigenValue(A,B,sigma=shift,value=eig,rawvector=vect,tol=1e-10,maxit=100,ncv=100);
+
+fuupf<complex> [ufc,vfc,pfc];
+fuuuus<complex> [xsc,ysc,usc,vsc];
+fppf<complex> [fc,gc];
+
+fuupf [ufr,vfr,pfr];
+fuuuus [xsr,ysr,usr,vsr];
+fppf [fr,gr];
+
+
+cout << "Write Eigenvalues/Eigenvectors " << endl;
+
+{
+ofstream file("DirEigFluidSolid-Re-"+Re+"-L-"+L+"-H-"+H+"-K-"+K+"-rho-"+rho+".dat",append);
+
+for(int j=0; j<nev; j++)
+{
+ cout << real(eig(j)) << " " << imag(eig(j)) <<  endl;
+ 
+
+
+
+ file << real(shift) << " " << imag(shift) << " " << real(eig(j)) << " " << imag(eig(j)) << endl;
+ 
+ 
+ ufc[]=vect(0:ndoff-1,j);
+ xsc[]=vect(ndoff:ndoff+ndofs-1,j);
+ fc[]=Pfe*vect(ndoff+ndofs:ndoft-1,j);
+
+ [ufr,vfr,pfr]=[real(ufc),real(vfc),real(pfc)];
+ [xsr,ysr,usr,vsr]=[real(xsc),real(ysc),real(ufc),real(vfc)];
+ [fr,gr]=[real(fc),real(gc)];
+
+
+ plot(ufr,usr,bb=[[-1,-3],[5,3]],value=1,wait=1,cmm="u-eig="+eig(j));
+ plot(vfr,vsr,bb=[[-1,-3],[5,3]],value=1,wait=1,cmm="v-eig="+eig(j));
+
+ if(real(eig(j))>=0)
+ {
+  ofstream filem("UnstableDirMode-Re-"+Re+"-L-"+L+"-H-"+H+"-K-"+K+"-rho-"+rho+"-shift-"+freqs+".dat",append);
+  filem << ufc[] << endl;
+  filem << xsc[] << endl;
+  filem << fc[] << endl;
+ } 
+
+};
+}; 
+
+

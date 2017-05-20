@@ -1,0 +1,151 @@
+load "MUMPS_seq"
+
+
+//Parametres adimensiones physiques
+
+real L=2.0;           // Length of the filament  
+real H=0.06;          // Thickness of the filament
+real Re=100;           // Nombre de Reynolds
+real K=0.02;		// Bending stiffness
+real rho=0.0118;	// Density ratio rhof/rhos
+real Lambda=0;		// Lame coefficient
+real Mu=K*(L/H)^3*6; // Lame coefficient
+real nu=1./Re;
+
+//Parametres numeriques
+real nev=10; // Nombre de valeurs propres
+int iwrite=0; // Ecriture vecteur propres
+real freqs=0.175;
+complex shift=0.0+(2*pi*freqs)*1i;
+real tolthres=1.e-14;
+real As=10;
+
+
+
+int FR=2;
+int FE=22;
+int ER=222;
+
+
+cout << "--- Re        =  " << Re << endl;
+cout << "--- rhos/rhof =  " << 1./rho << endl;
+cout << "--- K         =  " << K << endl;
+cout << "--- Lame-L    =  " << Lambda << endl;
+cout << "--- Lame-M    =  " << Mu << endl;
+cout << "-------------------------------------------------------" << endl;
+
+
+cout << "--- shift  = " << shift << endl;
+cout << "-------------------------------------------------------" << endl;
+
+mesh thf=readmesh("../mesh/meshF-L-"+L+"-H-"+H+".msh");
+mesh ths=readmesh("../mesh/meshS-L-"+L+"-H-"+H+".msh");
+
+func Pku=P2;
+func Pkp=P1;
+
+fespace fuupf(thf,[Pku,Pku,Pkp]);
+fespace fppf(thf,[Pkp,Pkp]);
+fespace fuuuuf(thf,[Pku,Pku,Pku,Pku]); 
+fespace fuuuus(ths,[Pku,Pku,Pku,Pku]); 
+fespace fuuf(thf,[Pku,Pku]); 
+
+
+				
+/////////////////////////////////////////////
+/////////////   Base Flow   /////////////////
+/////////////////////////////////////////////
+
+fuupf [u0,v0,p0];
+
+{
+ ifstream file("../baseflow/Baseflow1-Re-"+Re+"-L-"+L+"-H-"+H+".txt");
+ file >> u0[];
+};
+
+
+/////////////////////////////////////////////
+/////////////   Direct mode   ///////////////
+/////////////////////////////////////////////
+
+
+fuupf<complex> [udf,vdf,pdf];
+fuuuus<complex> [xds,yds,uds,vds];
+fuuuus<complex> [xsc,ysc,usc,vsc];
+fppf<complex> [fd,gd];
+
+fuupf [ufr,vfr,pfr];
+fuuuus [xs,ys,us,vs];
+
+{
+  ifstream filem("UnstableDirMode-Re-"+Re+"-L-"+L+"-H-"+H+"-K-"+K+"-rho-"+rho+"-shift-"+freqs+".dat",append);
+  filem >> udf[] ;
+  filem >> xds[] ;
+  filem >> fd[] ;
+} 
+
+fuuuus [xdsr,ydsr,udsr,vdsr],[xdsi,ydsi,udsi,vdsi];
+
+[xdsr,ydsr,udsr,vdsr]=[real(xds),real(yds),real(uds),real(vds)];
+[xdsi,ydsi,udsi,vdsi]=[imag(xds),imag(yds),imag(uds),imag(vds)];
+
+fespace fus(ths,Pku);
+fespace fuf(thf,Pku);
+
+real phi;
+mesh thsm,thfm;
+int kmax=9;
+
+fespace fusm(thsm,Pku);
+fusm vsm;
+
+fespace fuupfm(thfm,[Pku,Pku,Pkp]);
+fespace fufm(thfm,Pku);
+fuupfm<complex> [ufcm,vfcm,pfcm];
+fufm vfm;
+
+
+real[int] vviso(kmax);
+for(int j=0; j<kmax; j++) vviso(j)=-As*0.5+As*0.05*j;
+
+
+matrix Ext;
+
+fuuf [xf,yf],[xfs,yfs],[rxs,rys];
+
+varf vext([dxf,dyf],[xft,yft]) =
+int2d(thf)( dx(dxf)*dx(xft)+dy(dxf)*dy(xft)
+           +dx(dyf)*dx(yft)+dy(dyf)*dy(yft) )
+    +on(1,3,4,FR,dxf=0.,dyf=0.)
+    +on(FE,dxf=xfs,dyf=yfs);
+    
+Ext=vext(fuuf,fuuf,solver=CG);
+set(Ext,solver=sparsesolver);
+
+for (int k=0; k<=kmax; k++)
+{
+ phi=real(k)/real(kmax)*2*pi;
+ xsc[]=xds[]; xsc[]*=As*exp(1i*phi);
+ [xs,ys,us,vs]=[real(xsc),real(ysc),real(usc),real(vsc)];
+ [xfs,yfs]=[xs,ys];
+
+ rxs[]=vext(0,fuuf);
+ xf[]=Ext^-1*rxs[];
+ thfm=movemesh(thf,[x+xf,y+yf]);
+ thsm=movemesh(ths,[x+xs,y+ys]);
+ [ufcm,vfcm,pfcm]=[udf,vdf,pdf]; 
+ ufcm[]*=As*exp(1i*phi);
+ vfm=real(vfcm);
+ //plot(vfm,bb=[[-0.5,-2],[4,2]],viso=vviso,value=0,fill=1,wait=1,cmm="phi="+phi);
+ plot(thsm,cmm="phi="+phi);
+};
+
+
+
+
+
+
+
+
+
+

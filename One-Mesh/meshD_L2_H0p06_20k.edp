@@ -1,0 +1,121 @@
+// Lengths are made nondimesinoal with the cylinder diameter.
+
+///////////// FILAMENT GEOMETRY ///////////////
+
+real l=2.;	// length of the elastic filament
+real h=0.06; // thickness of the elastic filament
+
+real deltaS=0.5*(1-sqrt(1-h*h)); 
+real alphaS=atan(h/(2.*(0.5-deltaS)));
+
+
+///////////// COMPUTATIONAL BOX ///////////////
+
+real L2=40; 	// x position of outlet boundary
+real L1=10; 	// x position of inlet boundary
+real H1=10;	// y position of lateral boundary
+
+real l1=3;	// x position of wake boundary
+real h1=2;	// y position of left wake boundary
+real h2=4;	// y position of right wake boundary
+
+real blt=0.15;	// Boundary refinement layer thickness
+
+real deltaI=0.5*(1.-sqrt(1-h*h+4*blt*(1.-h)));
+real alphaI=atan((h/2.+blt)/(0.5-deltaI));
+
+///////////// MESH REFINEMENT ///////////////
+  
+real Nff=0.75;	// Farfield vertex density
+real Nw=5;	// Wake vertex density
+real Nbl=20;	// External boundary layer vertex density
+real Nbb=100;	// Bluff-body vertex density
+
+  
+////// BORDER DEFINITION  ////////////////////
+// B : border (domain)
+// I : inner borders
+// S : solid border
+// blb : bluff-body
+// inf : inflow
+// out : outflow
+// lat : lateral
+  
+
+// Bluff body (fluid domain)
+
+// Rigid/fluid
+border Sblb1(t=alphaS,2*pi-alphaS){x=0.5*cos(t);	y=0.5*sin(t);label=21;};
+
+// Elastic/rigid
+border Eblb1(t=0.5*h,-0.5*h){x=0.5-deltaS;	y=t;label=2000;};
+
+// Elastic/Fluid
+border Eblb2(t=0.5-deltaS,0.5+l)	{x=t;	y=-0.5*h;label=201;};	
+border Eblb3(t=-0.5*h,0.5*h){x=0.5+l;	y=t;label=202;};
+border Eblb4(t=0.5+l,0.5-deltaS)	{x=t;	y=0.5*h;label=203;};
+
+// Solid derefinement
+border Iblb(t=0.5,0.5+0.95*l){x=t;y=0;label=52;};
+
+// Boundary layer 
+border Iblb1(t=alphaI,2*pi-alphaI){x=(0.5+blt)*cos(t);y=(0.5+blt)*sin(t);label=5;}; 
+
+// Bluff body - fixed part
+border Iblb2(t=0.5-deltaI,0.5+l+blt){x=t;y=-(0.5*h+blt);label=5;};
+border Iblb3(t=-(0.5*h+blt),0.5*h+blt){x=0.5+l+blt;y=t;label=5;};
+border Iblb4(t=0.5+l+blt,0.5-deltaI)	{x=t;	y=(0.5*h+blt);label=5;};
+
+  // Outer box
+border Binf(t=H1,-H1)	{x=-L1;	y=t;	label=1;}
+border BoutU(t=h2,H1)	{x=L2;	y=t;	label=3;}
+border BoutM(t=-h2,h2)	{x=L2;	y=t;	label=3;}
+border BoutL(t=-H1,-h2)	{x=L2;	y=t;	label=3;}
+border BlatU(t=L2,-L1)	{x=t;	y=H1;	label=4;}
+border BlatL(t=-L1,L2)	{x=t;	y=-H1;	label=4;}
+  
+  // Inner box (wake)
+border Iinf(t=h1,-h1)	{x=-l1;y=t;label=51;}
+border IlatU(t=0,1){x=L2*(1-t)-l1*t;y=h2*(1-t)+h1*t;label=51;}
+border IlatL(t=0,1){x=-l1*(1-t)+L2*t;	y=-h1*(1-t)-h2*t;label=51;}
+
+mesh th=buildmesh(
+Sblb1(-pi*0.5*Nbb)
++Eblb1(h*Nbb)
++ Eblb2(l*Nbb)+Eblb3(h*Nbb)+Eblb4(l*Nbb)
++Iblb1(pi*0.5*Nbl)+Iblb2(l*Nbl)+Iblb3((h+2*blt)*Nbl)+Iblb4(l*Nbl) 
++ Binf(Nff*2*H1) + BlatL(Nff*(L1+L2)) + BoutL(Nff*(H1-h1)) + BoutM(0.5*(Nff+Nw)*2*h2) + BoutU(Nff*(H1-h1)) + BlatU(Nff*(L1+L2)) + 
+	    Iinf(Nw*2*h1) + IlatU(Nw*(L2-l1)) + IlatL(Nw*(L2-l1))     
+	    ,fixeborder=1);
+	    
+//mesh thS=buildmesh(	+ Eblb2(l*Nbb) + Eblb3(h*Nbb) + Eblb4(l*Nbb) + Iblb(0.75*l*Nbb) ,fixeborder=1 );
+	    
+real Ns=Nbb*0.1;
+
+plot(th,wait=1);
+//plot(thF,wait=1);
+//plot(thS,thF,wait=1);
+
+//savemesh(thS, "meshD_L2_H0p06_S_20k.msh");
+savemesh(th, "meshD_L2_H0p06_F_20k.msh");
+
+// include "mesh-stats.edp"
+
+fespace f0(th,P0);
+
+f0 vregion=region;
+plot(vregion,value=1,wait=1);
+
+int[int] reg=[9,0,3,0,13,1];
+
+th=change(th,region=reg);
+
+vregion=region;
+plot(vregion,value=1,wait=1);
+
+cout << "elastic solid - region = " << th(1.1,0.0).region << endl;
+cout << "fluid         - region = " << th(5,0.0).region << endl;
+
+
+
+

@@ -1,0 +1,134 @@
+-- FreeFem++ v  3.410000 (date Tue Oct 13 08:53:14 GMT 2015)
+lg_fem lg_mesh lg_mesh3 eigenvalue
+    1 : // Lengths are made nondimesinoal with the cylinder diameter.
+    2 :
+    3 : ///////////// FILAMENT GEOMETRY ///////////////
+    4 :
+    5 : real l=2.;      // length of the elastic filament
+    6 : real h=0.06; // thickness of the elastic filament
+    7 :
+    8 : real deltaS=0.5*(1-sqrt(1-h*h));
+    9 : real alphaS=atan(h/(2.*(0.5-deltaS)));
+   10 :
+   11 :
+   12 : ///////////// COMPUTATIONAL BOX ///////////////
+   13 :
+   14 : real L2=40;     // x position of outlet boundary
+   15 : real L1=10;     // x position of inlet boundary
+   16 : real H1=10;     // y position of lateral boundary
+   17 :
+   18 : real l1=3;      // x position of wake boundary
+   19 : real h1=2;      // y position of left wake boundary
+   20 : real h2=4;      // y position of right wake boundary
+   21 :
+   22 : real blt=0.15;  // Boundary refinement layer thickness
+   23 :
+   24 : real deltaI=0.5*(1.-sqrt(1-h*h+4*blt*(1.-h)));
+   25 : real alphaI=atan((h/2.+blt)/(0.5-deltaI));
+   26 :
+   27 : ///////////// MESH REFINEMENT ///////////////
+   28 :
+   29 : real Nff=0.75;  // Farfield vertex density
+   30 : real Nw=5;      // Wake vertex density
+   31 : real Nbl=20;    // External boundary layer vertex density
+   32 : real Nbb=100;   // Bluff-body vertex density
+   33 :
+   34 :
+   35 : ////// BORDER DEFINITION  ////////////////////
+   36 : // B : border (domain)
+   37 : // I : inner borders
+   38 : // S : solid border
+   39 : // blb : bluff-body
+   40 : // inf : inflow
+   41 : // out : outflow
+   42 : // lat : lateral
+   43 :
+   44 :
+   45 : // Bluff body (fluid domain)
+   46 :
+   47 : // Rigid/fluid
+   48 : border Sblb1(t=alphaS,2*pi-alphaS){x=0.5*cos(t);        y=0.5*sin(t);label=21;};
+   49 :
+   50 : // Elastic/rigid
+   51 : border Eblb1(t=0.5*h,-0.5*h){x=0.5-deltaS;      y=t;label=2000;};
+   52 :
+   53 : // Elastic/Fluid
+   54 : border Eblb2(t=0.5-deltaS,0.5+l)        {x=t;   y=-0.5*h;label=201;};
+ 
+   55 : border Eblb3(t=-0.5*h,0.5*h){x=0.5+l;   y=t;label=202;};
+   56 : border Eblb4(t=0.5+l,0.5-deltaS)        {x=t;   y=0.5*h;label=203;};
+   57 :
+   58 : // Solid derefinement
+   59 : border Iblb(t=0.5,0.5+0.95*l){x=t;y=0;label=52;};
+   60 :
+   61 : // Boundary layer
+   62 : border Iblb1(t=alphaI,2*pi-alphaI){x=(0.5+blt)*cos(t);y=(0.5+blt)*sin(t);label=5;};
+   63 :
+   64 : // Bluff body - fixed part
+   65 : border Iblb2(t=0.5-deltaI,0.5+l+blt){x=t;y=-(0.5*h+blt);label=5;};
+   66 : border Iblb3(t=-(0.5*h+blt),0.5*h+blt){x=0.5+l+blt;y=t;label=5;};
+   67 : border Iblb4(t=0.5+l+blt,0.5-deltaI)    {x=t;   y=(0.5*h+blt);label=5;}; 
+   68 :
+   69 :   // Outer box
+   70 : border Binf(t=H1,-H1)   {x=-L1; y=t;    label=1;}
+   71 : border BoutU(t=h2,H1)   {x=L2;  y=t;    label=3;}
+   72 : border BoutM(t=-h2,h2)  {x=L2;  y=t;    label=3;}
+   73 : border BoutL(t=-H1,-h2) {x=L2;  y=t;    label=3;}
+   74 : border BlatU(t=L2,-L1)  {x=t;   y=H1;   label=4;}
+   75 : border BlatL(t=-L1,L2)  {x=t;   y=-H1;  label=4;}
+   76 :
+   77 :   // Inner box (wake)
+   78 : border Iinf(t=h1,-h1)   {x=-l1;y=t;label=51;}
+   79 : border IlatU(t=0,1){x=L2*(1-t)-l1*t;y=h2*(1-t)+h1*t;label=51;}
+   80 : border IlatL(t=0,1){x=-l1*(1-t)+L2*t;   y=-h1*(1-t)-h2*t;label=51;}
+   81 :
+   82 : mesh th=buildmesh(
+   83 : Sblb1(-pi*0.5*Nbb)
+   84 : +Eblb1(h*Nbb)
+   85 : + Eblb2(l*Nbb)+Eblb3(h*Nbb)+Eblb4(l*Nbb)
+   86 : +Iblb1(pi*0.5*Nbl)+Iblb2(l*Nbl)+Iblb3((h+2*blt)*Nbl)+Iblb4(l*Nbl)
+   87 : + Binf(Nff*2*H1) + BlatL(Nff*(L1+L2)) + BoutL(Nff*(H1-h1)) + BoutM(0.5*(Nff+Nw)*2*h2) + BoutU(Nff*(H1-h1)) + BlatU(Nff*(L1+L2)) +
+   88 :             Iinf(Nw*2*h1) + IlatU(Nw*(L2-l1)) + IlatL(Nw*(L2-l1))
+   89 :             ,fixeborder=1);
+   90 :
+   91 : //mesh thS=buildmesh(   + Eblb2(l*Nbb) + Eblb3(h*Nbb) + Eblb4(l*Nbb) + Iblb(0.75*l*Nbb) ,fixeborder=1 );
+   92 :
+   93 : real Ns=Nbb*0.1;
+   94 :
+   95 : plot(th,wait=1);
+   96 : //plot(thF,wait=1);
+   97 : //plot(thS,thF,wait=1);
+   98 :
+   99 : //savemesh(thS, "meshD_L2_H0p06_S_20k.msh");
+  100 : savemesh(th, "meshD_L2_H0p06_F_20k.msh");
+  101 :
+  102 : // include "mesh-stats.edp"
+  103 :
+  104 : fespace f0(th,P0);
+  105 :
+  106 : f0 vregion=region;
+  107 : plot(vregion,value=1,wait=1);
+  108 :
+  109 : int[int] reg=[9,0,3,0,13,1];
+  110 :
+  111 : th=change(th,region=reg);
+  112 :
+  113 : vregion=region;
+  114 : plot(vregion,value=1,wait=1);
+  115 :
+  116 : cout << "elastic solid - region = " << th(1.1,0.0).region << endl;
+  117 : cout << "fluid         - region = " << th(5,0.0).region << endl;
+  118 :
+  119 :
+  120 :
+  121 :
+  122 :  sizestack + 1024 =1760  ( 736 )
+ 
+  --  mesh:  Nb of Triangles =  21937, Nb of Vertices 11112
+  number of required edges : 0
+elastic solid - region = 1
+fluid         - region = 0
+times: compile 0.223s, execution 1.315s,  mpirank:0
+ CodeAlloc : nb ptr  3327,  size :185768 mpirank: 0
+Ok: Normal End
+ try getConsole D:\marquet\Documents\Etudes\FSIstability\One-Mesh\meshD_L2_H0p06_20k.edp

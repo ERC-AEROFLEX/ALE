@@ -1,0 +1,291 @@
+  117 :
+  118 : //////////////////////////////////////////////////////
+  119 :
+  120 :
+  121 : cout << "Construction matrices " << endl;
+  122 : matrix<complex> A,B;
+  123 :
+  124 : {
+  125 :
+  126 : ///////// First line/ Fluid equation /////////////////
+  127 :
+  128 : varf vmatff([du,dv,dp],[ut,vt,pt])=
+  129 : int2d(thf)( - shift*(du*ut+dv*vt)
+  130 :                 -( du*dx(u0)+dv*dy(u0) + u0*dx(du)+v0*dy(du) )*ut
+  131 :                 -( du*dx(v0)+dv*dy(v0) + u0*dx(dv)+v0*dy(dv) )*vt
+  132 :                 - 2*nu*(dx(du)*dx(ut)+dy(dv)*dy(vt))
+  133 :              - nu*(dx(dv)+dy(du))*(dy(ut)+dx(vt))
+  134 :                 + (dx(ut)+dy(vt))*dp
+  135 :                 + (dx(du)+dy(dv))*pt)
+  136 :                 + on(4,dv=1.) + on(1,FR,du=1.,dv=1.);
+  137 :
+  138 : varf vmatfeb([df,dg],[ut,vt,pt])
+  139 : =int1d(thf,FE)( -df*ut - dg*vt );
+  140 :
+  141 : matrix<complex> Aff,Afeb;
+  142 :
+  143 : cout << "-- First line " << endl;
+  144 :
+  145 : cout << "-- ndoff= " << ndoff << endl;
+  146 :
+  147 : Aff = vmatff(fuupf,fuupf,solver=GMRES,tgv=1.e30);
+  148 : cout << "Aff  : " << Aff.n << " " << Aff.m << endl;
+  149 :
+  150 : {
+  151 : matrix<complex> At = vmatfeb(fppf,fuupf); Afeb = At*Pfe;
+  152 : };
+  153 : cout << "Afeb : " << Afeb.n << " " << Afeb.m << endl;
+  154 :
+  155 :
+  156 : ///////// 3rd line: Elastic boundary equation ////////////
+  157 :
+  158 : cout << "-- Third line " << endl;
+  159 :
+  160 : cout << "-- ndofbe= " << ndofbe << endl;
+  161 :
+  162 : matrix<complex> Aebs,Aebf;
+  163 :
+  164 : varf vmatebf([duf,dvf,dpf],[ft,gt]) = int1d(thf,FE)(-duf*ft-dvf*gt);
+ 
+  165 :
+  166 : varf vmatebs([dxs,dys,dus,dvs],[ft,gt])
+  167 : = int1d(thf,FE)( (dus   -  dxs*dx(u0) - dys*dy(u0) )*ft
+  168 :                         +(dvs - dxs*dx(v0) - dys*dy(v0) )*gt );
+  169 :
+  170 : {
+  171 : matrix<complex> At = vmatebf(fuupf,fppf);
+  172 : Aebf=Pfe'*At;
+  173 : };
+  174 : cout << "Aebf : " << Aebf.n << " " << Aebf.m << endl;
+  175 :
+  176 : {
+  177 : matrix<complex> Atf = vmatebs(fuuuuf,fppf);
+  178 : cout << Atf.n << " " << Atf.m << endl;
+  179 : cout << FS.n << " " << FS.m << endl;
+  180 : matrix<complex> Ats =Atf*FS;
+  181 : Aebs=Pfe'*Ats;
+  182 : };
+  183 : cout << "Aebs : " << Aebs.n << " " << Aebs.m << endl;
+  184 :
+  185 :
+  186 : ///////// 2nd line: Elastic solid equation /////////////////
+  187 :
+  188 : matrix<complex> Ass,Aseb;
+  189 :
+  190 : varf vmatss([dxs,dys,dus,dvs],[xst,yst,ust,vst]) =
+  191 : int2d(ths)(
+  192 :     - shift*(dxs*xst+dys*yst+dus*ust+dvs*vst)
+  193 :     - rho*Lambda*(dx(dxs)+dy(dys))*(dx(ust)+dy(vst))
+  194 :     - rho*Mu*( dx(dxs)*dx(ust) + dx(dys)*dx(vst) + dy(dxs)*dy(ust) + dy(t<¢Åà,?é|‚/dys)*dy(vst) )
+  195 :     - rho*Mu*( dx(dxs)*dx(ust) + dy(dxs)*dx(vst) + dx(dys)*dy(ust) + dy(t<¢Åà,?é|‚/dys)*dy(vst) )
+  196 :     + dus*xst + dvs*yst )
+  197 :     + on(ER,dxs=1,dys=1,dus=1,dvs=1);
+  198 :
+  199 : varf vmatseb([df,dg],[xst,yst,ust,vst])
+  200 : = int1d(thf,FE)(rho*(df*ust+dg*vst));
+  201 :
+  202 : cout << "-- Second line " << endl;
+  203 :
+  204 : cout << "-- ndofs= " << ndofs << endl;
+  205 :
+  206 : Ass=vmatss(fuuuus,fuuuus,solver=GMRES,tgv=1.e30);
+  207 : cout << "Ass  : " << Ass.n << " " << Ass.m << endl;
+  208 :
+  209 : {
+  210 : matrix<complex> Atf = vmatseb(fppf,fuuuuf);
+  211 : cout << "Atf.n = " << Atf.n << ", Atf.m = " << Atf.m << endl;
+  212 : matrix<complex> Ats =FS'*Atf;
+  213 : cout << "FS.n = " << FS.n << ", FS.m = " << FS.m << endl;
+  214 : cout << "Ats.n = " << Ats.n << ", Ats.m = " << Ats.m << endl;
+  215 : Aseb=Ats*Pfe;
+  216 : };
+  217 : cout << "Aseb : " << Aseb.n << " " << Aseb.m << endl;
+  218 :
+  219 :
+  220 : cout << "Assemblage Matrix" << endl;
+  221 :
+  222 : A=[ [ Aff ,   0 , Afeb],
+  223 :         [0   , Ass , Aseb],
+  224 :      [Aebf, Aebs ,   0]];
+  225 :
+  226 :
+  227 : A=A';
+  228 :
+  229 : cout << "Construction of B " << endl;
+  230 :
+  231 : varf vmatBff([du,dv,dp],[ut,vt,pt])=
+  232 : int2d(thf)( du*ut+dv*vt );
+  233 :
+  234 : varf vmatBss([xs,ys,us,vs],[xst,yst,ust,vst]) =
+  235 : int2d(ths)( xs*xst+ys*yst+us*ust+vs*vst );
+  236 :
+  237 : varf vmatBee([us,vs],[ust,vst]) =
+  238 : int1d(thf,FE)( 0.*(us*ust+vs*vst) );
+  239 :
+  240 : matrix<complex> Bff,Bss,Bee;
+  241 :
+  242 : Bff = vmatBff(fuupf,fuupf);
+  243 : cout << "Bff  : " << Bff.n << " " << Bff.m << endl;
+  244 : Bss = vmatBss(fuuuus,fuuuus);
+  245 : cout << "Bss  : " << Bss.n << " " << Bss.m << endl;
+  246 : {
+  247 : matrix<complex> Bt = vmatBee(fppf,fppf);
+  248 : matrix<complex> Btt = Pfe'*Bt;
+  249 : Bee=Btt*Pfe;
+  250 : };
+  251 : cout << "Bee : " << Bee.n << " " << Bee.m << endl;
+  252 :
+  253 :
+  254 : B=[ [ Bff ,  0  ,   0],
+  255 :     [  0 ,       Bss ,   0],
+  256 :     [   0 ,  0  , Bee]];
+  257 :
+  258 :
+  259 : cout << "Assemblage B" << endl;
+  260 :
+  261 : };
+  262 :
+  263 : cout << "Factorisation A " << endl;
+  264 : set(A,solver=sparsesolver);
+  265 :
+  266 : complex[int] eig(nev); // to store nev eigein value
+  267 : complex[int,int] vect(ndoft,nev);   // to store nev eigen vector
+  268 :
+  269 : cout << "ndoft= " << ndoft << endl;
+  270 :
+  271 : int kk=EigenValue(A,B,sigma=conj(shift),value=eig,rawvector=vect,tol=1e-t<¢Åà,?é|‚/10,maxit=100,ncv=100);
+  272 :
+  273 : fuupf<complex> [ufc,vfc,pfc];
+  274 : fuuuus<complex> [xsc,ysc,usc,vsc];
+  275 :
+  276 : fuupf [ufr,vfr,pfr];
+  277 : fuuuus [xsr,ysr,usr,vsr];
+  278 :
+  279 : {
+  280 : ofstream file("AdjEigFluidSolid1-Re-"+Re+"-L-"+L+"-H-"+H+"-K-"+K+"-rho-"t<¢Åà,?é|‚/+rho+".dat",append);
+  281 :
+  282 : for(int j=0; j<nev; j++)
+  283 : {
+  284 :  cout << "---------------------------" << endl;
+  285 :  cout << "--- j= " << j << " , eig= " << eig(j) << endl;
+  286 :  file << real(shift) << " " << imag(shift) << " " << real(eig(j)) << " "t<¢Åà,?é|‚/ << imag(eig(j)) << endl;
+  287 :  ufc[]=vect(0:ndoff-1,j);
+  288 :  xsc[]=vect(ndoff:ndoff+ndofs-1,j);
+  289 :  [ufr,vfr,pfr]=[real(ufc),real(vfc),real(pfc)];
+  290 :  [xsr,ysr,usr,vsr]=[real(xsc),real(ysc),real(ufc),real(vfc)];
+  291 :  plot(vfr,vsr,value=1,wait=1,cmm="eig="+eig(j));
+  292 :
+  293 :
+  294 :  if(real(eig(j))>=0)
+  295 :  {
+  296 :   ofstream filem("UnstableAdjMode-Re-"+Re+"-L-"+L+"-H-"+H+"-K-"+K+"-rho-t<¢Åà,?é|‚/"+rho+"-shift-"+imag(shift)+".dat",append);
+  297 :   filem << vect(:,j) << endl;
+  298 :  }
+  299 :
+  300 : };
+  301 : };
+  302 :
+  303 :
+  304 :  sizestack + 1024 =4364  ( 3340 )
+ 
+--- Re        =  100
+--- rhos/rhof =  84.7458
+--- K         =  0.044
+--- Lame-L    =  0
+--- Lame-M    =  9777.78
+-------------------------------------------------------
+--- shift  = (0,0.628319)
+-------------------------------------------------------
+  --  mesh:  Nb of Triangles =  23041, Nb of Vertices 12002
+  --  mesh:  Nb of Triangles =   6284, Nb of Vertices 3452
+FS.n= 140172, FS.m= 38944
+Pfe.n=24004, Pfe.m=1220
+ndoff  = 82088
+ndofbe = 1220
+ndofs  = 38944
+ndoft  = 122252
+Construction matrices
+-- First line
+-- ndoff= 82088
+Aff  : 82088 82088
+Afeb : 82088 1220
+-- Third line
+-- ndofbe= 1220
+Aebf : 1220 82088
+24004 140172
+140172 38944
+Aebs : 1220 38944
+-- Second line
+-- ndofs= 38944
+Ass  : 38944 38944
+Atf.n = 140172, Atf.m = 24004
+FS.n = 140172, FS.m = 38944
+Ats.n = 38944, Ats.m = 24004
+Aseb : 38944 1220
+Assemblage Matrix
+  -- Block Matrix NxM = 3x3    nxm  =122252x122252 nb  none zero coef. 2262782
+Construction of B
+Bff  : 82088 82088
+Bss  : 38944 38944
+Bee : 1220 1220
+  -- Block Matrix NxM = 3x3    nxm  =122252x122252 nb  none zero coef. 754390
+Assemblage B
+Factorisation A
+ndoft= 122252
+Real complex eigenvalue problem: A*x - B*x*lambda
+Complex eigenvalue problem: A*x - B*x*lambda
+mode =3  sigma=(0,-0.628319)
+ 
+Dimension of the system            : 122252
+Number of 'requested' eigenvalues  : 10
+Number of 'converged' eigenvalues  : 10
+Number of Arnoldi vectors generated: 100
+Number of iterations taken         : 2
+ 
+Eigenvalues:
+  lambda[1]: (0.0236901,-0.780869)
+  lambda[2]: (-0.118275,-0.681904)
+  lambda[3]: (-0.119961,-0.5482)
+  lambda[4]: (-0.119462,-0.768432)
+  lambda[5]: (-0.0752588,-0.432494)
+  lambda[6]: (-0.190975,-0.697676)
+  lambda[7]: (-0.189445,-0.547608)
+  lambda[8]: (-0.193568,-0.688079)
+  lambda[9]: (-0.206515,-0.637389)
+  lambda[10]: (-0.20908,-0.669545)
+ 
+ raw 457.692 == 457.692
+ raw 436.27 == 436.27
+ raw 408.803 == 408.803
+ raw 438.097 == 438.097
+ raw 436.819 == 436.819
+ raw 49.9514 == 49.9514
+ raw 74.3132 == 74.3132
+ raw 22.2909 == 22.2909
+ raw 70.7171 == 70.7171
+ raw 27.4889 == 27.4889
+---------------------------
+--- j= 0 , eig= (0.0236901,-0.780869)
+---------------------------
+--- j= 1 , eig= (-0.118275,-0.681904)
+---------------------------
+--- j= 2 , eig= (-0.119961,-0.5482)
+---------------------------
+--- j= 3 , eig= (-0.119462,-0.768432)
+---------------------------
+--- j= 4 , eig= (-0.0752588,-0.432494)
+---------------------------
+--- j= 5 , eig= (-0.190975,-0.697676)
+---------------------------
+--- j= 6 , eig= (-0.189445,-0.547608)
+---------------------------
+--- j= 7 , eig= (-0.193568,-0.688079)
+---------------------------
+--- j= 8 , eig= (-0.206515,-0.637389)
+---------------------------
+--- j= 9 , eig= (-0.20908,-0.669545)
+times: compile 0.762s, execution 109.314s,  mpirank:0
+ ######## We forget of deleting   5 Nb pointer,   0Bytes  ,  mpirank 0, memory lt<¢Åà,?é|‚/eak =0
+ CodeAlloc : nb ptr  4010,  size :203276 mpirank: 0
+Ok: Normal End
+ try getConsole D:\marquet\Documents\Etudes\FSIstability\Two-Meshes\stability\Adt<¢Åà,?é|‚/jEig-FluidSolid-Weak.edp

@@ -1,0 +1,143 @@
+-- FreeFem++ v  3.410000 (date Tue Oct 13 08:53:14 GMT 2015)
+lg_fem lg_mesh lg_mesh3 eigenvalue
+    1 : //////////////// GEOMETRY ///////////////////
+    2 :
+    3 : real L=2.;      // length of the filament
+    4 : real H=0.06; // thickness of the filament
+    5 :
+    6 : real L2=30;     // x position of outlet boundary
+    7 : real L1=20;     // x position of inlet boundary
+    8 : real H1=20;     // y position of lateral boundary
+    9 : real r=0.006; // rayon des bords arrondis du filament
+   10 :
+   11 : real l1=3;      // x position of wake boundary
+   12 : real h1=1.25;   // y position of left wake boundary
+   13 : real h2=3;      // y position of right wake boundary
+   14 :
+   15 : real blt=0.06;  //  refinement layer thickness
+   16 :
+   17 : //////////////// LABEL ///////////////////
+   18 :
+   19 : int FR=2; // Fluid/Rigid boundary
+   20 : int FE=22; // Fluid/Elastic boundary
+   21 : int ER=222; // Rigid/Elastic boundary
+   22 :
+   23 : /////////// MESH ////////////
+   24 : real Nff=0.5;   // Farfield vertex density
+   25 : real Nww=7;     // Wake vertex density
+   26 : real Nw=4;      // Wake vertex density
+   27 : real Nbl=20;    // External boundary layer vertex density
+   28 : real Nbb=40;    // Bluff-body vertex density
+   29 :
+   30 : // GEOMETRY (intermediate) ##################################
+   31 :
+   32 : real deltaS=0.5*(1-sqrt(1-H*H));
+   33 : real alphaS=atan(H/(2*(0.5-deltaS)));
+   34 : real deltaI=0.5*(1-sqrt(1-H*H+4*blt*(1-H)));
+   35 : real alphaI=atan((H/2+blt)/(0.5-deltaI));
+   36 :
+   37 : // CONSTRUCTION #############################################
+   38 : // B : border (domain)
+   39 : // I : inner borders
+   40 : // S : solid border
+   41 : // blb : bluff-body
+   42 : // inf : inflow
+   43 : // out : outflow
+   44 : // lat : lateral
+   45 :
+   46 : // Fluid/Rigid boundary
+   47 : border Sblb1(t=alphaS,2*pi-alphaS){x=0.5*cos(t);y=0.5*sin(t);label=FR;}; 
+   48 :
+   49 : // Rigid/Elastic boundary
+   50 : border Eblb1(t=0.5*H,-0.5*H){x=0.5-deltaS;y=t;label=ER;};
+   51 :
+   52 : // Elastic/Fluid boundary
+   53 : border Eblb2(t=0.5-deltaS,0.5+L-1.5*blt){x=t;y=-0.5*H;label=FE;};
+   54 : border Eblb22(t=0.5+L-1.5*blt,0.5+L-H/2){x=t;y=-0.5*H;label=FE;};
+   55 : border Eblb3(t=3*pi/2,2*pi){x=0.5+L+H/2*(cos(t)-1);y=0.5*H*sin(t);label=FE;};
+   56 : border Eblb4(t=0,pi/2){x=0.5+L+H/2*(cos(t)-1);y=0.5*H*sin(t);label=FE;}; 
+   57 : border Eblb55(t=0.5+L-H/2,0.5+L-1.5*blt){x=t;y=0.5*H;label=FE;};
+   58 : border Eblb5(t=0.5+L-1.5*blt,0.5-deltaS){x=t;y=0.5*H;label=FE;};
+   59 :
+   60 :
+   61 : // Solid derefinement
+   62 : border Iblb(t=0.55,0.5+0.95*L){x=t;y=0;label=5;};
+   63 :
+   64 : // Boundary layer
+   65 : border Iblb1(t=alphaI,2*pi-alphaI){x=(0.5+blt)*cos(t);y=(0.5+blt)*sin(t);label=5;};
+   66 :
+   67 : border Iblb2(t=0.5-deltaI,0.5+L-blt){x=t;       y=-(0.5*H+blt);label=5;};
+   68 : border Iblb22(t=0.5+L-blt,0.5+L+blt){x=t;       y=-(0.5*H+blt);label=5;};
+   69 :
+   70 : border Iblb3(t=-(0.5*H+blt),0.5*H+blt){x=0.5+L+blt;y=t;label=5;};
+   71 :
+   72 : border Iblb44(t=0.5+L+blt,0.5+L-blt){x=t;       y=(0.5*H+blt);label=5;}; 
+   73 :
+   74 : border Iblb4(t=0.5+L-blt,0.5-deltaI){x=t;       y=(0.5*H+blt);label=5;}; 
+   75 :
+   76 :
+   77 : border Iblb5(t=0.5+L+1.5*blt,0.5+L+3*blt){x=t;y=0;label=5;};
+   78 : border Iblb6(t=0.5+L+3*blt,6*L){x=t;y=0;label=5;};
+   79 :
+   80 : // Outer box
+   81 : border Binf(t=H1,-H1)   {x=-L1;y=t;label=1;}
+   82 : border BoutU(t=h2,H1)   {x=L2;y=t;      label=3;}
+   83 : border BoutM(t=-h2,h2){x=L2;y=t;        label=3;}
+   84 : border BoutL(t=-H1,-h2){x=L2;y=t;label=3;}
+   85 : border BlatU(t=L2,-L1){x=t;     y=H1;   label=4;}
+   86 : border BlatL(t=-L1,L2){x=t;     y=-H1;label=4;}
+   87 :
+   88 :   // Inner box (wake)
+   89 : border Iinf(t=h1,-h1)   {x=-l1;y=t;label=5;}
+   90 : border IlatU(t=0,0.5){x=L2*(1-t)-l1*t;y=h2*(1-t)+h1*t;  label=5;}
+   91 : border IlatUU(t=0.5,1){x=L2*(1-t)-l1*t;y=h2*(1-t)+h1*t; label=5;}
+   92 : border IlatLL(t=0,0.5){x=-l1*(1-t)+L2*t;        y=-h1*(1-t)-h2*t;label=5;}
+   93 : border IlatL(t=0.5,1){x=-l1*(1-t)+L2*t; y=-h1*(1-t)-h2*t;label=5;}
+   94 :
+   95 :
+   96 : mesh thS=buildmesh(
+   97 : Eblb1(H*Nbb*2)
+   98 : + Eblb2(L*Nbb*1.5) + Eblb22(1.5*blt*Nbb*2)
+   99 : + Eblb3(pi*H*Nbb*3) + Eblb4(pi*H*Nbb*3)
+  100 : + Eblb55(1.5*blt*Nbb*2)+ Eblb5(L*Nbb*1.5),fixeborder=1);
+  101 :
+  102 : plot(thS,wait=1);
+  103 :
+  104 : mesh thF=buildmesh(
+  105 : Sblb1(-pi*0.5*Nbb*2)
+  106 : + Eblb2(-L*Nbb*1.5) + Eblb22(-1.5*blt*Nbb*2)
+  107 : + Eblb3(-pi*H*Nbb*3) + Eblb4(-pi*H*Nbb*3)
+  108 : + Eblb55(-1.5*blt*Nbb*2)+ Eblb5(-L*Nbb*1.5)
+  109 : + Iblb1(pi*0.5*Nbl*2) + Iblb2(L*Nbl*2) + Iblb22(2*blt*Nbl*3)
+  110 : + Iblb3((H+2*blt)*Nbl*3)
+  111 : + Iblb44(2*blt*Nbl*3) + Iblb4(L*Nbl*2)
+  112 : + Iblb5(blt*Nbl*2) + Iblb6(3*L*Nbl)
+  113 : + Binf(Nff*2*H1) + BlatL(Nff*(L1+L2)) + BoutL(Nff*(H1-h1)) + BoutM(0.5*(Nff+Nw)*2*h2) + BoutU(Nff*(H1-h1)) + BlatU(Nff*(L1+L2)) + Iinf(Nw*2*h1) + IlatU(Nw*(L2-l1)/2)+ IlatUU(Nww*(L2-l1)/2) + IlatL(Nw*(L2-l1)/2)+ IlatLL(Nww*(L2-l1)/2) ,fixeborder=1);
+  114 :
+  115 :
+  116 : plot(thS,wait=1);
+  117 : plot(thF,wait=1);
+  118 :
+  119 : mesh th=thF+thS;
+  120 : plot(th,wait=1);
+  121 :
+  122 : savemesh(thS, "meshS-L-"+L+"-H-"+H+".msh");
+  123 : savemesh(thF, "meshF-L-"+L+"-H-"+H+".msh");
+  124 : savemesh(th, "mesh-L-"+L+"-H-"+H+".msh");
+  125 :
+  126 :
+  127 :
+  128 :
+  129 :
+  130 :
+  131 :  sizestack + 1024 =2032  ( 1008 )
+ 
+  --  mesh:  Nb of Triangles =   1594, Nb of Vertices 949
+  --  mesh:  Nb of Triangles =  21250, Nb of Vertices 10887
+  number of required edges : 0
+  number of required edges : 0
+  number of required edges : 0
+times: compile 0.261s, execution 5.432s,  mpirank:0
+ CodeAlloc : nb ptr  3839,  size :194420 mpirank: 0
+Ok: Normal End
+ try getConsole D:\marquet\Documents\Etudes\FSIstability\Two-Meshes\mesh\mesh-cylinder-filament.edp

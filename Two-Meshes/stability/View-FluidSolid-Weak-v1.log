@@ -1,0 +1,173 @@
+-- FreeFem++ v  3.410000 (date Tue Oct 13 08:53:14 GMT 2015)
+lg_fem lg_mesh lg_mesh3 eigenvalue
+    1 : load "MUMPS_seq"
+    2 :
+    3 :
+    4 : //Parametres adimensiones physiques
+    5 :
+    6 : real L=2.0;           // Length of the filament  
+    7 : real H=0.06;
+        // Thickness of the filament
+    8 : real Re=100;           // Nombre de Reynolds
+    9 : real K=0.02;            // Bending stiffness
+   10 : real rho=0.0118;        // Density ratio rhof/rhos
+   11 : real Lambda=0;          // Lame coefficient
+   12 : real Mu=K*(L/H)^3*6; // Lame coefficient
+   13 : real nu=1./Re;
+   14 :
+   15 : //Parametres numeriques
+   16 : real nev=10; // Nombre de valeurs propres
+   17 : int iwrite=0; // Ecriture vecteur propres
+   18 : real freqs=0.175;
+   19 : complex shift=0.0+(2*pi*freqs)*1i;
+   20 : real tolthres=1.e-14;
+   21 : real As=10;
+   22 :
+   23 :
+   24 :
+   25 : int FR=2;
+   26 : int FE=22;
+   27 : int ER=222;
+   28 :
+   29 :
+   30 : cout << "--- Re        =  " << Re << endl;
+   31 : cout << "--- rhos/rhof =  " << 1./rho << endl;
+   32 : cout << "--- K         =  " << K << endl;
+   33 : cout << "--- Lame-L    =  " << Lambda << endl;
+   34 : cout << "--- Lame-M    =  " << Mu << endl;
+   35 : cout << "-------------------------------------------------
+  ... : ------" << endl;
+   36 :
+   37 :
+   38 : cout << "--- shift  = " << shift << endl;
+   39 : cout << "-------------------------------------------------
+  ... : ------" << endl;
+   40 :
+   41 : mesh thf=readmesh("../mesh/meshF-L-"+L+"-H-"+H+".msh");
+   42 : mesh ths=readmesh("../mesh/meshS-L-"+L+"-H-"+H+".msh");
+   43 :
+   44 : func Pku=P2;
+   45 : func Pkp=P1;
+   46 :
+   47 : fespace fuupf(thf,[Pku,Pku,Pkp]);
+   48 : fespace fppf(thf,[Pkp,Pkp]);
+   49 : fespace fuuuuf(thf,[Pku,Pku,Pku,Pku]);
+   50 : fespace fuuuus(ths,[Pku,Pku,Pku,Pku]);
+   51 : fespace fuuf(thf,[Pku,Pku]);
+   52 :
+   53 :
+   54 :
+   55 : /////////////////////////////////////////////
+   56 : /////////////   Base Flow   /////////////////
+   57 : /////////////////////////////////////////////
+   58 :
+   59 : fuupf [u0,v0,p0];
+   60 :
+   61 : {
+   62 :  ifstream file("../baseflow/Baseflow1-Re-"+Re+"-L-"+L+"-H-"+H+".txt");
+   63 :  file >> u0[];
+   64 : };
+   65 :
+   66 :
+   67 : /////////////////////////////////////////////
+   68 : /////////////   Direct mode   ///////////////
+   69 : /////////////////////////////////////////////
+   70 :
+   71 :
+   72 : fuupf<complex> [udf,vdf,pdf];
+   73 : fuuuus<complex> [xds,yds,uds,vds];
+   74 : fuuuus<complex> [xsc,ysc,usc,vsc];
+   75 : fppf<complex> [fd,gd];
+   76 :
+   77 : fuupf [ufr,vfr,pfr];
+   78 : fuuuus [xs,ys,us,vs];
+   79 :
+   80 : {
+   81 :   ifstream filem("UnstableDirMode-Re-"+Re+"-L-"+L+"-H-"+H+"-K-"+K+"-rho-"+rho+"-shift-"+freqs+".dat",append);
+   82 :   filem >> udf[] ;
+   83 :   filem >> xds[] ;
+   84 :   filem >> fd[] ;
+   85 : }
+   86 :
+   87 : fuuuus [xdsr,ydsr,udsr,vdsr],[xdsi,ydsi,udsi,vdsi];
+   88 :
+   89 : [xdsr,ydsr,udsr,vdsr]=[real(xds),real(yds),real(uds),real(vds)];
+   90 : [xdsi,ydsi,udsi,vdsi]=[imag(xds),imag(yds),imag(uds),imag(vds)];
+   91 :
+   92 : fespace fus(ths,Pku);
+   93 : fespace fuf(thf,Pku);
+   94 :
+   95 : real phi;
+   96 : mesh thsm,thfm;
+   97 : int kmax=9;
+   98 :
+   99 : fespace fusm(thsm,Pku);
+  100 : fusm vsm;
+  101 :
+  102 : fespace fuupfm(thfm,[Pku,Pku,Pkp]);
+  103 : fespace fufm(thfm,Pku);
+  104 : fuupfm<complex> [ufcm,vfcm,pfcm];
+  105 : fufm vfm;
+  106 :
+  107 :
+  108 : real[int] vviso(kmax);
+  109 : for(int j=0; j<kmax; j++) vviso(j)=-As*0.5+As*0.05*j;
+  110 :
+  111 :
+  112 : matrix Ext;
+  113 :
+  114 : fuuf [xf,yf],[xfs,yfs],[rxs,rys];
+  115 :
+  116 : varf vext([dxf,dyf],[xft,yft]) =
+  117 : int2d(thf)( dx(dxf)*dx(xft)+dy(dxf)*dy(xft)
+  118 :            +dx(dyf)*dx(yft)+dy(dyf)*dy(yft) )
+  119 :     +on(1,3,4,FR,dxf=0.,dyf=0.)
+  120 :     +on(FE,dxf=xfs,dyf=yfs);
+  121 :
+  122 : Ext=vext(fuuf,fuuf,solver=CG);
+  123 : set(Ext,solver=sparsesolver);
+  124 :
+  125 : for (int k=0; k<=kmax; k++)
+  126 : {
+  127 :  phi=real(k)/real(kmax)*2*pi;
+  128 :  xsc[]=xds[]; xsc[]*=As*exp(1i*phi);
+  129 :  [xs,ys,us,vs]=[real(xsc),real(ysc),real(usc),real(vsc)];
+  130 :  [xfs,yfs]=[xs,ys];
+  131 :
+  132 :  rxs[]=vext(0,fuuf);
+  133 :  xf[]=Ext^-1*rxs[];
+  134 :  thfm=movemesh(thf,[x+xf,y+yf]);
+  135 :  thsm=movemesh(ths,[x+xs,y+ys]);
+  136 :  [ufcm,vfcm,pfcm]=[udf,vdf,pdf];
+  137 :  ufcm[]*=As*exp(1i*phi);
+  138 :  vfm=real(vfcm);
+  139 :  //plot(vfm,bb=[[-0.5,-2],[4,2]],viso=vviso,value=0,fill=1,wait=1,cmm="phi="+phi);
+  140 :  plot(thsm,cmm="phi="+phi);
+  141 : };
+  142 :
+  143 :
+  144 :
+  145 :
+  146 :
+  147 :
+  148 :
+  149 :
+  150 :
+  151 :
+  152 :  sizestack + 1024 =3392  ( 2368 )
+ 
+--- Re        =  100
+--- rhos/rhof =  84.7458
+--- K         =  0.02
+--- Lame-L    =  0
+--- Lame-M    =  4444.44
+-------------------------------------------------------
+--- shift  = (0,1.09956)
+-------------------------------------------------------
+  --  mesh:  Nb of Triangles =  21250, Nb of Vertices 10887
+  --  mesh:  Nb of Triangles =   1594, Nb of Vertices 949
+times: compile 0.283s, execution 13.377s,  mpirank:0
+ ######## We forget of deleting   4 Nb pointer,   0Bytes  ,  mpirank 0, memory leak =0
+ CodeAlloc : nb ptr  3115,  size :180136 mpirank: 0
+Ok: Normal End
+ try getConsole D:\marquet\Documents\Etudes\FSIstability\Two-Meshes\stability\View-FluidSolid-Weak-v1.edp

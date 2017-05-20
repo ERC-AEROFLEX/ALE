@@ -1,0 +1,259 @@
+#!MC 1410
+$!VarSet |LFDSFN1| = '"DirEigFluidSolid-Re-100-L-2-H-0.06-K-0.044-rho-0.0118.dat"'
+$!VarSet |LFDSVL1| = '"V1" "V2" "V3" "V4"'
+$!SETSTYLEBASE FACTORY
+$!PLOTOPTIONS 
+  SUBDIVIDEALLCELLS = NO
+$!GLOBALPAPER 
+  PAPERSIZEINFO
+    {
+    LETTER
+      {
+      WIDTH = 8.5
+      HEIGHT = 11
+      LEFTHARDCLIPOFFSET = 0.125
+      RIGHTHARDCLIPOFFSET = 0.125
+      TOPHARDCLIPOFFSET = 0.125
+      BOTTOMHARDCLIPOFFSET = 0.125
+      }
+    }
+$!PAGE 
+  NAME = 'Untitled'
+  PAPERATTRIBUTES
+    {
+    BACKGROUNDCOLOR = WHITE
+    ISTRANSPARENT = YES
+    ORIENTPORTRAIT = NO
+    SHOWGRID = YES
+    SHOWRULER = NO
+    SHOWPAPER = NO
+    PAPERSIZE = LETTER
+    RULERSPACING = ONEINCH
+    PAPERGRIDSPACING = HALFINCH
+    REGIONINWORKAREA
+      {
+      X1 = 1
+      Y1 = 0.25
+      X2 = 10
+      Y2 = 8.25
+      }
+    }
+### Frame Number 1 ###
+$!READDATASET  '|LFDSFN1|'
+  INITIALPLOTTYPE = XYLINE
+  INCLUDETEXT = NO
+  INCLUDEGEOM = NO
+  ASSIGNSTRANDIDS = YES
+  VARLOADMODE = BYNAME
+  VARNAMELIST = '|LFDSVL1|'
+$!REMOVEVAR |LFDSVL1|
+$!REMOVEVAR |LFDSFN1|
+$!FRAMELAYOUT 
+  SHOWBORDER = NO
+  SHOWHEADER = NO
+  HEADERCOLOR = RED
+  XYPOS
+    {
+    X = 1
+    Y = 0.25
+    }
+  WIDTH = 4
+  HEIGHT = 8
+$!THREEDAXIS 
+  ASPECTRATIOLIMIT = 25
+  BOXASPECTRATIOLIMIT = 25
+$!PLOTTYPE  = XYLINE
+$!FRAMENAME  = 'Frame 001'
+$!GLOBALTIME 
+  SOLUTIONTIME = 0
+$!DELETELINEMAPS 
+$!ACTIVELINEMAPS  =  [1]
+$!GLOBALLINEPLOT 
+  DATALABELS
+    {
+    DISTANCESKIP = 5
+    }
+  LEGEND
+    {
+    XYPOS
+      {
+      X = 95
+      }
+    }
+$!LINEMAP  [1]
+  NAME = '&DV&'
+  ASSIGN
+    {
+    ZONE = 1
+    XAXISVAR = 3
+    YAXISVAR = 4
+    }
+  LINES
+    {
+    COLOR = RED
+    }
+  SYMBOLS
+    {
+    SYMBOLSHAPE
+      {
+      GEOMSHAPE = CIRCLE
+      }
+    COLOR = BLACK
+    FILLMODE = USELINECOLOR
+    FILLCOLOR = RED
+    LINETHICKNESS = 0.2
+    }
+  BARCHARTS
+    {
+    COLOR = RED
+    FILLCOLOR = RED
+    }
+  ERRORBARS
+    {
+    COLOR = RED
+    }
+$!LINEMAP  [2]
+  NAME = '&DV&'
+  ASSIGN
+    {
+    ZONE = 1
+    XAXISVAR = 1
+    YAXISVAR = 3
+    }
+  LINES
+    {
+    COLOR = GREEN
+    }
+  SYMBOLS
+    {
+    COLOR = GREEN
+    FILLCOLOR = GREEN
+    }
+  BARCHARTS
+    {
+    COLOR = GREEN
+    FILLCOLOR = GREEN
+    }
+  ERRORBARS
+    {
+    COLOR = GREEN
+    }
+$!LINEMAP  [3]
+  NAME = '&DV&'
+  ASSIGN
+    {
+    ZONE = 1
+    XAXISVAR = 1
+    YAXISVAR = 4
+    }
+  LINES
+    {
+    COLOR = BLUE
+    }
+  SYMBOLS
+    {
+    COLOR = BLUE
+    FILLCOLOR = BLUE
+    }
+  BARCHARTS
+    {
+    COLOR = BLUE
+    FILLCOLOR = BLUE
+    }
+  ERRORBARS
+    {
+    COLOR = BLUE
+    }
+$!XYLINEAXIS 
+  DEPXTOYRATIO = 1
+  GRIDAREA
+    {
+    DRAWBORDER = YES
+    LINETHICKNESS = 0.1
+    }
+  VIEWPORTPOSITION
+    {
+    X1 = 15
+    X2 = 95
+    Y2 = 95
+    }
+  VIEWPORTTOPSNAPTARGET = 95
+$!XYLINEAXIS 
+  XDETAIL 1
+    {
+    RANGEMIN = -0.40000000000000002
+    RANGEMAX = 0.050000000000000003
+    GRSPACING = 0.2
+    TICKS
+      {
+      TICKDIRECTION = OUT
+      LINETHICKNESS = 0.1
+      }
+    TICKLABEL
+      {
+      OFFSET = 3
+      }
+    TITLE
+      {
+      TITLEMODE = USETEXT
+      TEXT = '<greek>l</greek>'
+      TEXTSHAPE
+        {
+        HEIGHT = 4.6
+        }
+      OFFSET = 6
+      }
+    AXISLINE
+      {
+      LINETHICKNESS = 0.1
+      }
+    }
+$!XYLINEAXIS 
+  YDETAIL 1
+    {
+    RANGEMIN = -0.02
+    RANGEMAX = 2.2000000000000002
+    GRSPACING = 0.2
+    TICKS
+      {
+      TICKDIRECTION = OUT
+      LINETHICKNESS = 0.1
+      }
+    TICKLABEL
+      {
+      OFFSET = 3
+      }
+    TITLE
+      {
+      TITLEMODE = USETEXT
+      TEXT = '<greek>w</greek>'
+      TEXTSHAPE
+        {
+        HEIGHT = 4.6
+        }
+      OFFSET = 9
+      }
+    AXISLINE
+      {
+      LINETHICKNESS = 0.1
+      }
+    }
+$!LINEPLOTLAYERS 
+  SHOWLINES = NO
+  SHOWSYMBOLS = YES
+$!ATTACHGEOM 
+  GEOMTYPE = RECTANGLE
+  ANCHORPOS
+    {
+    X = -0.0007636655948554116
+    Y = -0.02162379421221905
+    }
+  COLOR = CUSTOM2
+  ISFILLED = YES
+  FILLCOLOR = CUSTOM2
+  DRAWORDER = BEFOREDATA
+  RAWDATA
+0.0707395523787 2.22599887848 
+$!FRAMECONTROL ACTIVATEBYNUMBER
+  FRAME = 1
+$!SETSTYLEBASE CONFIG

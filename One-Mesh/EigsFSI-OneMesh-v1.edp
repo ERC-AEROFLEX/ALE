@@ -1,0 +1,382 @@
+///////////////  PHYSICAL PARAMETERS ///////////
+
+real Re=100;               // Reynolds number
+real K=0.044;              // Bending stiffness
+real rho=1./0.0118;        // Density ratio: rhos/rhof
+real L=2.;		           // Beam length
+real Lambda=0;			// Lame coefficient
+real Mu=K*(L/0.06)^3*6;    // Lame coefficient (not clear)
+
+///////////////  MESH  ///////////
+
+string GeomId="meshD";		// Mesh geometry "XXX"
+string ParaId="_L2_H0p06";		// Mesh geometry parameters "XXX" 
+string ZoneId="_F";		// Mesh zone "-XXX"
+string ResoId="_20k";		// Mesh resolution "XXX"
+int[int] FR=[21];		// Labels of fluid/rigid borders
+int[int] FE=[201,202,203];	// Labels of fluid/elastic borders
+int[int] ER=[2000];		// Labels of elastic/rigid borders
+
+
+cout << "rhos/rhof = "+rho << endl;
+cout << "Lambda =    "+Lambda << endl;
+cout << "Mu =        "+Mu << endl;
+cout << " " << endl;
+
+complex[int] shift=[0.0 + 2*pi*0.13*1i];
+
+
+int ShowMeThings=1;			// show me nice pictures
+int ShouldISaveEigenvalues=0;		// save eigenvalues ?
+int ShouldISaveEigenvectorsTP=0;	// save eigenvector for TecPlot ?
+int ShouldISaveEigenvectors=0;		// save eigenvectors ?
+int ShouldISaveForces=0;		// save forces on solid wall ?
+int NewEvFile=0;			// start a new eigenvalue file ?
+int Evk=0;				// which eigenvector is saved
+
+int ExportAnimation=0;			// Export an animation of the mode no. Evk to TecPlot ?
+    real ampli=1;			// Amplification factor for the mesh displacement
+    int Nframes=100;			// Number of frames
+
+// ##################################################################
+// ## Solver parameters #############################################
+// ##################################################################
+
+load "MUMPS_seq"
+int nev=5;		// How many eigenvalues should I seek ?
+verbosity=0;		// How much you speak
+int ncvP=4*nev;		// Number of Arnoldi vectors
+func Pku=P2; 		// Elements for u/v space
+func Pkp=P1; 		// Elements for p space
+
+string SaveevLocation="./eigenvalues/"+GeomId+"/"+GeomId+ParaId+"/EigsFSI-v6_"+GeomId+ParaId+ResoId+"_Re"+Re+"_rho"+rho+"_K"+K+"_ev.txt";
+
+// string SaveevLocation="./eigenvalues/"+GeomId+"/"+GeomId+ParaId+"/EigsFSI_"+GeomId+ParaId+ResoId+"_Re"+Re+"_ev.txt";
+
+// if(ShouldISaveEigenvectorsTP==1){
+//   exec("mkdir ./eigenvectors-tec/"+GeomId);
+//   exec("mkdir ./eigenvectors-tec/"+GeomId+"/"+GeomId+ParaId);
+// };
+// if(ShouldISaveEigenForce==1){
+//   exec("mkdir ./eigenforces/"+GeomId);
+//   exec("mkdir ./eigenforces/"+GeomId+"/"+GeomId+ParaId);
+// };
+// if(ShouldISaveEigenvectors==1){
+//   exec("mkdir ./eigenvectors/"+GeomId);
+//   exec("mkdir ./eigenvectors/"+GeomId+"/"+GeomId+ParaId);
+// };
+if(ShouldISaveEigenvalues==1){
+  exec("mkdir ./eigenvalues/"+GeomId);
+  exec("mkdir ./eigenvalues/"+GeomId+"/"+GeomId+ParaId);
+};
+
+
+// ##################################################################
+// ## Read mesh, and initialize solution ############################
+// ##################################################################
+
+// Read mesh
+mesh thF=readmesh("../Mesh/"+GeomId+"/"+GeomId+ParaId+"_F"+ResoId+".msh");	// Fluid mesh
+mesh thS=readmesh("../Mesh/"+GeomId+"/"+GeomId+ParaId+"_S"+ResoId+".msh");	// Fluid mesh
+
+// Create fe spaces
+fespace FuupF(thF,[Pku,Pku,Pkp]);		// velocity-pressure fluid fe space
+fespace FppF(thF,[Pkp,Pkp]);			// fluid nodes displacements
+fespace FuF(thF,Pku); 				// velocity fe space	
+fespace FpF(thF,Pkp); 				// force/pressure fe space
+fespace FwF(thF,P1);				// fluid wall quantities fe space
+fespace FuuuuS(thS,[Pku,Pku,Pku,Pku]);		// solid displacement fe space
+fespace FuuuuF(thF,[Pku,Pku,Pku,Pku]);
+fespace FuuF(thF,[Pku,Pku]);
+fespace FuS(thS,Pku);
+fespace FpS(thS,Pkp);
+fespace FppS(thS,[Pkp,Pkp]);
+fespace FwS(thS,P1);				// fluid wall quantities fe space
+
+// Create fields
+  // [u,v,p] -> fluid velocities/pressure
+  // [f,g]   -> wall stress
+  // [x,y]   -> solid displacement
+FuF OUTu,OUTv,OUTx,OUTy,OUTvx,OUTvy;
+FpF OUTp,OUTf,OUTg;
+
+FuupF [ub,vb,pb];	// fluid base velocities/pressure
+FuupF<complex> [up,vp,pp];	// fluid perturbation velocities/pressure
+
+FuuuuS [xb,yb,vxb,vyb];
+FuuuuS<complex> [xp,yp,vxp,vyp];
+
+FppS [fb,gb];
+FppS<complex> [fp,gp];
+
+// Initialize solution
+{
+  real tps;
+  ifstream fileinit("../BF/basefields/"+GeomId+"/"+GeomId+ParaId+"/BF4_"+GeomId+ParaId+ZoneId+ResoId+"_Re"+Re+".txt");
+  fileinit >> tps;
+  fileinit >> OUTu[];
+  fileinit >> OUTf[];
+  fileinit >> OUTv[];
+  fileinit >> OUTg[];
+  fileinit >> OUTp[];
+  
+//   OUTu[]=0;
+//   OUTf[]=0;
+//   OUTv[]=0;
+//   OUTg[]=0;
+//   OUTp[]=0;
+  
+  OUTx[]=0;
+  OUTy[]=0;
+  OUTvx[]=0;
+  OUTvy[]=0;
+};
+
+[ub,vb,pb] = [OUTu,OUTv,OUTp];
+[fb,gb] = [OUTf,OUTp];
+[xb,yb,vxb,vyb]=[OUTx,OUTy,OUTvx,OUTvy];
+
+if(ShowMeThings>2)
+{
+  plot(thF,wait=1,cmm="fluid mesh");
+  plot(thS,wait=1,cmm="solid mesh");
+  plot(thF,thS,wait=1,cmm="fluid+solid meshes");
+  plot(OUTu,[OUTf,OUTg],wait=1,cmm="u1 velocity component + wall stress");
+//   plot(OUTx,wait=1,cmm="solid x displacement");
+//   plot(OUTy,wait=1,cmm="solid y displacement");
+};
+
+// Change of basis between full and reduced space
+
+
+// FpprFppF : nppr,S x npp,S
+// Solid space <-> boundary FE
+// matrix<complex> FpprFppSI;
+// matrix FpprFppS;
+// {
+//   int nppr;
+//   varf von([u,v],[p,q]) = on(FE,u=1,v=1);
+//   FppS [pw,pww];
+//   pw[]=von(0,FppS,tgv=1);
+//   complex [int,int] temp(pw[].sum,FppS.ndof);
+//   real [int,int] tempR(pw[].sum,FppS.ndof);
+//   int knew=0;
+//   for(int kold=0; kold<FppS.ndof; kold++)
+//   {
+//     if(pw[][kold]==1)
+//     {
+//       tempR(knew,kold)=1;
+//       temp(knew,kold)=1;
+//       knew+=1; 	 
+//     };
+//   };
+//   FpprFppSI=temp;
+//   FpprFppS=tempR;
+// };
+// cout << "Solid space <-> boundary FE : " << FpprFppS.n << " " << FpprFppS.m << endl;
+
+// FpprFppF : nppr,F x npp,F
+// Fluid space <-> boundary FR+FE
+matrix<complex> FpprFppFI;
+matrix FpprFppF;
+{
+  int nppr;
+  varf von([u,v],[p,q]) = on(FE,u=1,v=1);
+  FppF [pw,pww];
+  pw[]=von(0,FppF,tgv=1);
+  complex [int,int] temp(pw[].sum,FppF.ndof);
+  real [int,int] tempR(pw[].sum,FppF.ndof);
+  int knew=0;
+  for(int kold=0; kold<FppF.ndof; kold++)
+  {
+    if(pw[][kold]==1)
+    {
+      tempR(knew,kold)=1;
+      temp(knew,kold)=1;
+      knew+=1; 	 
+    };
+  };
+  FpprFppFI=temp;
+  FpprFppF=tempR;
+};
+
+// Interpolation matrix
+matrix SFR=interpolate(FuuuuF,FuuuuS);
+matrix<complex> SF = SFR;
+
+cout << "Fluid space <-> boundary FR+FE : " << FpprFppF.n << " " << FpprFppF.m << endl;
+
+// ##################################################################
+// ## Variational formulations & matrices assembly ##################
+// ##################################################################
+
+cout << "Assemble matrices..." << endl;
+matrix<complex> B,A,Ashifted;
+{
+  
+  varf vAff([up,vp,pp],[tu,tv,tp]) = 
+  int2d(thF)(
+    - ( ub*dx(up)+vb*dy(up) + up*dx(ub)+vp*dy(ub) )*tu
+    - ( ub*dx(vp)+vb*dy(vp) + up*dx(vb)+vp*dy(vb) )*tv
+    - 1./Re*( dx(up)*dx(tu) + dx(vp)*dx(tv) + dy(up)*dy(tu) + dy(vp)*dy(tv) )
+    - 1./Re*( dx(up)*dx(tu) + dy(up)*dx(tv) + dx(vp)*dy(tu) + dy(vp)*dy(tv) )
+    + (dx(tu)+dy(tv))*pp
+    + (dx(up)+dy(vp))*tp 
+    )
+    + on(4,vp=1.)
+    + on(1,FR,up=1.,vp=1.);
+  matrix<complex> Aff = vAff(FuupF,FuupF,solver=GMRES);
+  cout << "Aff  : " << Aff.n << " " << Aff.m << endl;
+
+  varf vAss([xp,yp,vxp,vyp],[tx,ty,tvx,tvy]) =
+  int2d(thS)(
+    - Lambda/rho*(dx(xp)+dy(yp))*(dx(tvx)+dy(tvy))
+    - Mu/rho*( dx(xp)*dx(tvx) + dx(yp)*dx(tvy) + dy(xp)*dy(tvx) + dy(yp)*dy(tvy) )
+    - Mu/rho*( dx(xp)*dx(tvx) + dy(xp)*dx(tvy) + dx(yp)*dy(tvx) + dy(yp)*dy(tvy) )
+    + vxp*tx + vyp*ty
+    )
+    + on(ER,xp=0.,yp=0.)
+    + on(ER,vxp=0.,vyp=0.);
+  matrix<complex> Ass=vAss(FuuuuS,FuuuuS,solver=GMRES);
+  cout << "Ass  : " << Ass.n << " " << Ass.m << endl;
+
+  varf vAfi([fp,gp],[tu,tv,tp]) = 
+	int1d(thF,FE)(-fp*tu-gp*tv);
+  matrix<complex> Afi = vAfi(FppF,FuupF);
+  matrix<complex> Afir = Afi*FpprFppFI';
+  cout << "Afir : " << Afir.n << " " << Afir.m << endl;
+  
+  varf vAsi([fp,gp],[tx,ty,tvx,tvy]) = 
+	int1d(thF,FE)(1./rho*(fp*tvx+gp*tvy));
+  matrix<complex> Asi = vAsi(FppF,FuuuuF);
+  matrix<complex> Asi1 = SF'*Asi;
+  matrix<complex> Asir = Asi1*FpprFppFI';
+  cout << "Asir : " << Asir.n << " " << Asir.m << endl;
+
+  varf vAif([up,vp,pp],[tf,tg]) = 
+	int1d(thF,FE)(up*tf+vp*tg);	// u on FR boundary
+  matrix<complex> Aif = vAif(FuupF,FppF);
+  matrix<complex> Aifr = FpprFppFI*Aif;
+  cout << "Aifr : " << Aifr.n << " " << Aifr.m << endl; 
+
+  varf vAis([xp,yp,vxp,vyp],[tf,tg]) = 
+	int1d(thF,FE)( tf*(xp*dx(ub)+yp*dy(ub) - vxp) + tg*(xp*dx(vb)+yp*dy(vb) - vyp) );							// no-slip on FR boundary
+  matrix<complex> Ais1 = vAis(FuuuuF,FppF);
+  matrix<complex> Ais = Ais1*SF;
+  matrix<complex> Aisr = FpprFppFI*Ais;
+  cout << "Aisr : " << Aisr.n << " " << Aisr.m << endl;
+  
+  varf vBff([up,vp,pp],[tu,tv,tp]) = int2d(thF)(up*tu+vp*tv);
+  matrix<complex> Bff=vBff(FuupF,FuupF);
+  
+  varf vBss([xp,yp,vxp,vyp],[tx,ty,tvx,tvy]) = int2d(thS)(xp*tx+yp*ty+vxp*tvx+vyp*tvy);
+  matrix<complex> Bss=vBss(FuuuuS,FuuuuS);
+  
+  varf vBii([vxp,vyp],[tf,tg]) = 
+	int1d(thF,FE)(0*(vxp*tf+vyp*tg));	// transp. vel. on FE b. is at the lhs (if not, not possible to recover the pure fluid problem)
+  matrix<complex> Bii=vBii(FppF,FppF);
+  matrix<complex> Bii1 = FpprFppFI*Bii;
+  matrix<complex> Biir = Bii1*FpprFppFI';
+
+  A=[ [Aff,	0,	Afir	],
+      [0,	Ass,	Asir	],
+      [Aifr,	Aisr,	0	] ];
+      
+  B=[ [Bff,	0,	0	],
+      [0,	Bss,	0	],
+      [0,	0,	Biir	] ];
+
+//   A=Ass;
+//   B=Bss;
+
+//   A=[	[Aff,	Afir	],
+// 	[Aifr,	0	] ];
+// 	
+//   B=[	[Bff,	0	],
+// 	[0,	Biir	] ];
+  
+  load "thresholdings"
+  B.thresholding(1.e-10);
+}
+cout << "Problem size : "+Ashifted.n+" ddl" << endl;
+
+for(int s=0;s<shift.n;s++){	// Loop the shift values
+
+  {
+    matrix<complex> Btemp;
+    complex mshift=-shift[s];
+    Btemp = mshift*B;
+    Ashifted=A+Btemp;
+  };
+  
+  cout << "Shift value : " << shift[s] << endl;
+
+  cout << "LU decompostion of the LHS matrix..." << endl;
+  set(Ashifted, solver=sparsesolver);
+
+  // ##################################################################
+  // ## Solve generalized eigenvalue problem ##########################
+  // ##################################################################
+
+  cout << "Eigenvalue solver is running..." << endl;
+
+  complex[int] ev(nev); // to store nev eigenvalues 
+  complex[int,int] eV(Ashifted.n,nev);   
+
+  verbosity=0;
+  EigenValue(Ashifted,B,sigma=shift[s],value=ev,rawvector=eV,tol=1e-10,ncv=ncvP);
+  verbosity=0;
+
+  if (ShouldISaveEigenvalues==1){include "EigsFSI-ExportEigenvalues.edp"};
+
+  cout << " " << endl;
+  cout << "################# RESULTS ###################" << endl;
+  cout << " " << endl;
+  cout 	<< "k" 		  << "	" 
+	<< "lambda      " << "	" 
+	<< "freq        " << "	" 
+	<< "omega       " << "	"
+	<< "residual    " << endl;
+
+  for(int ki=0;ki<nev-1;ki++){ 
+
+    up[]=eV(0:FuupF.ndof-1,ki);
+    xp[]=eV(FuupF.ndof:FuupF.ndof+FuuuuS.ndof-1,ki);
+    fp[]=eV(FuupF.ndof+FuuuuS.ndof:FuupF.ndof+FuuuuS.ndof+FppS.ndof-1,ki);
+    
+    complex sigma=ev(ki);
+    complex[int] resA=A*eV(0:eV.n-1,ki);
+    complex[int] resB=B*eV(0:eV.n-1,ki);
+    resB*=sigma;
+    complex[int] residu=resA-resB;
+    
+    cout.scientific << ki 			<< "	"
+		    << real(sigma)		<< "	"
+		    << imag(sigma)/(2*pi)	<< "	"
+		    << imag(sigma) 	<< "	"
+		    << residu.l2 		<< endl;
+
+
+      // Plot nice things 
+
+    if (ShowMeThings>0){
+      FuF upR,vpR,ppR;
+      upR=real(up);
+      
+      FuS xpR,ypR;
+      xpR=real(xp);
+      ypR=real(yp);
+      plot(upR,[xpR,ypR],wait=1,cmm="real displacement mode + real velocity mode "+sigma);
+    };
+    
+  };
+  
+  cout << " " << endl;
+  cout << "#############################################" << endl;
+  cout << " " << endl;
+
+  if (ExportAnimation>0){include "EigsFSI-ExportAnimation.edp"}
+
+};
+
+cout << "OK, normal end." << endl;

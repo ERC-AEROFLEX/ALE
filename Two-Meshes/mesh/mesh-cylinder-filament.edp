@@ -1,0 +1,130 @@
+//////////////// GEOMETRY ///////////////////
+
+real L=2.;	// length of the filament
+real H=0.06; // thickness of the filament
+
+real L2=30; 	// x position of outlet boundary
+real L1=20; 	// x position of inlet boundary
+real H1=20;	// y position of lateral boundary
+real r=0.006; // rayon des bords arrondis du filament
+
+real l1=3;	// x position of wake boundary
+real h1=1.25;	// y position of left wake boundary
+real h2=3;	// y position of right wake boundary
+
+real blt=0.06;	//  refinement layer thickness
+
+//////////////// LABEL ///////////////////
+
+int FR=2; // Fluid/Rigid boundary
+int FE=22; // Fluid/Elastic boundary
+int ER=222; // Rigid/Elastic boundary
+
+/////////// MESH ////////////  
+real Nff=0.5;	// Farfield vertex density
+real Nww=7;	// Wake vertex density
+real Nw=4;	// Wake vertex density
+real Nbl=20;	// External boundary layer vertex density
+real Nbb=40;	// Bluff-body vertex density
+
+// GEOMETRY (intermediate) ##################################
+  
+real deltaS=0.5*(1-sqrt(1-H*H));
+real alphaS=atan(H/(2*(0.5-deltaS)));
+real deltaI=0.5*(1-sqrt(1-H*H+4*blt*(1-H)));
+real alphaI=atan((H/2+blt)/(0.5-deltaI));
+
+// CONSTRUCTION #############################################
+// B : border (domain)
+// I : inner borders
+// S : solid border
+// blb : bluff-body
+// inf : inflow
+// out : outflow
+// lat : lateral
+
+// Fluid/Rigid boundary
+border Sblb1(t=alphaS,2*pi-alphaS){x=0.5*cos(t);y=0.5*sin(t);label=FR;}; 	
+
+// Rigid/Elastic boundary
+border Eblb1(t=0.5*H,-0.5*H){x=0.5-deltaS;y=t;label=ER;};
+
+// Elastic/Fluid boundary
+border Eblb2(t=0.5-deltaS,0.5+L-1.5*blt){x=t;y=-0.5*H;label=FE;};
+border Eblb22(t=0.5+L-1.5*blt,0.5+L-H/2){x=t;y=-0.5*H;label=FE;};
+border Eblb3(t=3*pi/2,2*pi){x=0.5+L+H/2*(cos(t)-1);y=0.5*H*sin(t);label=FE;};
+border Eblb4(t=0,pi/2){x=0.5+L+H/2*(cos(t)-1);y=0.5*H*sin(t);label=FE;};
+border Eblb55(t=0.5+L-H/2,0.5+L-1.5*blt){x=t;y=0.5*H;label=FE;};
+border Eblb5(t=0.5+L-1.5*blt,0.5-deltaS){x=t;y=0.5*H;label=FE;};
+
+
+// Solid derefinement
+border Iblb(t=0.55,0.5+0.95*L){x=t;y=0;label=5;};
+
+// Boundary layer 
+border Iblb1(t=alphaI,2*pi-alphaI){x=(0.5+blt)*cos(t);y=(0.5+blt)*sin(t);label=5;}; 
+
+border Iblb2(t=0.5-deltaI,0.5+L-blt){x=t;	y=-(0.5*H+blt);label=5;};
+border Iblb22(t=0.5+L-blt,0.5+L+blt){x=t;	y=-(0.5*H+blt);label=5;};
+
+border Iblb3(t=-(0.5*H+blt),0.5*H+blt){x=0.5+L+blt;y=t;label=5;};
+
+border Iblb44(t=0.5+L+blt,0.5+L-blt){x=t;	y=(0.5*H+blt);label=5;};
+
+border Iblb4(t=0.5+L-blt,0.5-deltaI){x=t;	y=(0.5*H+blt);label=5;};
+
+
+border Iblb5(t=0.5+L+1.5*blt,0.5+L+3*blt){x=t;y=0;label=5;};
+border Iblb6(t=0.5+L+3*blt,6*L){x=t;y=0;label=5;};
+
+// Outer box
+border Binf(t=H1,-H1)	{x=-L1;y=t;label=1;}
+border BoutU(t=h2,H1)	{x=L2;y=t;	label=3;}
+border BoutM(t=-h2,h2){x=L2;y=t;	label=3;}
+border BoutL(t=-H1,-h2){x=L2;y=t;label=3;}
+border BlatU(t=L2,-L1){x=t;	y=H1;	label=4;}
+border BlatL(t=-L1,L2){x=t;	y=-H1;label=4;}
+  
+  // Inner box (wake)
+border Iinf(t=h1,-h1)	{x=-l1;y=t;label=5;}
+border IlatU(t=0,0.5){x=L2*(1-t)-l1*t;y=h2*(1-t)+h1*t;	label=5;}
+border IlatUU(t=0.5,1){x=L2*(1-t)-l1*t;y=h2*(1-t)+h1*t;	label=5;}
+border IlatLL(t=0,0.5){x=-l1*(1-t)+L2*t;	y=-h1*(1-t)-h2*t;label=5;}
+border IlatL(t=0.5,1){x=-l1*(1-t)+L2*t;	y=-h1*(1-t)-h2*t;label=5;}
+
+
+mesh thS=buildmesh(
+Eblb1(H*Nbb*2) 
++ Eblb2(L*Nbb*1.5) + Eblb22(1.5*blt*Nbb*2) 
++ Eblb3(pi*H*Nbb*3) + Eblb4(pi*H*Nbb*3) 
++ Eblb55(1.5*blt*Nbb*2)+ Eblb5(L*Nbb*1.5),fixeborder=1);
+
+plot(thS,wait=1);
+
+mesh thF=buildmesh(
+Sblb1(-pi*0.5*Nbb*2) 
++ Eblb2(-L*Nbb*1.5) + Eblb22(-1.5*blt*Nbb*2) 
++ Eblb3(-pi*H*Nbb*3) + Eblb4(-pi*H*Nbb*3) 
++ Eblb55(-1.5*blt*Nbb*2)+ Eblb5(-L*Nbb*1.5)
++ Iblb1(pi*0.5*Nbl*2) + Iblb2(L*Nbl*2) + Iblb22(2*blt*Nbl*3) 
++ Iblb3((H+2*blt)*Nbl*3)
++ Iblb44(2*blt*Nbl*3) + Iblb4(L*Nbl*2) 
++ Iblb5(blt*Nbl*2) + Iblb6(3*L*Nbl)
++ Binf(Nff*2*H1) + BlatL(Nff*(L1+L2)) + BoutL(Nff*(H1-h1)) + BoutM(0.5*(Nff+Nw)*2*h2) + BoutU(Nff*(H1-h1)) + BlatU(Nff*(L1+L2)) + Iinf(Nw*2*h1) + IlatU(Nw*(L2-l1)/2)+ IlatUU(Nww*(L2-l1)/2) + IlatL(Nw*(L2-l1)/2)+ IlatLL(Nww*(L2-l1)/2) ,fixeborder=1);
+
+	    
+plot(thS,wait=1);
+plot(thF,wait=1);
+
+mesh th=thF+thS;
+plot(th,wait=1);
+
+savemesh(thS, "meshS-L-"+L+"-H-"+H+".msh");
+savemesh(thF, "meshF-L-"+L+"-H-"+H+".msh");
+savemesh(th, "mesh-L-"+L+"-H-"+H+".msh");
+
+
+
+
+
+

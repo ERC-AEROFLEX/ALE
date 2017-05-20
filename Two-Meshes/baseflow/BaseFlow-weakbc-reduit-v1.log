@@ -1,0 +1,244 @@
+-- FreeFem++ v  3.410000 (date Tue Oct 13 08:53:14 GMT 2015)
+lg_fem lg_mesh lg_mesh3 eigenvalue
+    1 : // Conditions aux limites sur le cylindre: forte
+    2 : // Conditions aux limites sur le filament: faible
+    3 :
+    4 : load "MUMPS_seq"
+    5 : load "thresholdings"
+    6 :
+    7 : // Nombre de Reynolds
+    8 : real L=2.0;
+    9 : real H=0.06;
+   10 : real Re=100;
+   11 : real Rep=75;
+   12 : int init=1;
+   13 : real tolNewton=1.e-10;
+   14 : real tolthresh=1.e-12;
+   15 : real nu=1./Re;
+   16 :
+   17 : int FE=22;
+   18 : int FR=2;
+   19 :
+   20 : mesh th=readmesh("../mesh/meshF-L-"+L+"-H-"+H+".msh");
+   21 :
+   22 : func Pku=P2;
+   23 : func Pkp=P1;
+   24 :
+   25 : fespace fuup(th,[Pku,Pku,Pkp]);
+   26 : fespace fuu(th,[Pkp,Pkp]);
+   27 : fespace fpp(th,[Pkp,Pkp]);
+   28 :
+   29 : fuup [u0,v0,p0];
+   30 : fpp [f0,g0];
+   31 : real us0,vs0;
+   32 : us0=0.0; vs0=0.0;
+   33 :
+   34 : int ndofv=fuup.ndof;
+   35 : int ndofb;
+   36 :
+   37 : ///////////////  Initial condition  ////////////////////////
+   38 :
+   39 : if(init==0)
+   40 : {
+   41 : [u0,v0,p0]=[1,0,0]; [f0,g0]=[0,0];
+   42 : }
+   43 : else
+   44 : {
+   45 :  {
+   46 :   ifstream file("./Baseflow1-Re-"+Rep+"-L-"+L+"-H-"+H+".txt");
+   47 :   file >> u0[];
+   48 :   file >> f0[];
+   49 :  };
+   50 :  plot(u0,value=1,wait=1);
+   51 : };
+   52 :
+   53 :
+   54 : ////////  Variational formulation   ////////////////////////
+   55 :
+   56 : varf vmatv([du,dv,dp],[ut,vt,pt])=
+   57 :  int2d(th)( ( du*dx(u0)+dv*dy(u0) + u0*dx(du)+v0*dy(du) )*ut
+   58 :           + ( du*dx(v0)+dv*dy(v0) + u0*dx(dv)+v0*dy(dv) )*vt
+   59 :              +2*nu*(dx(du)*dx(ut)+dy(dv)*dy(vt))
+   60 :              +nu*(dx(dv)+dy(du))*(dy(ut)+dx(vt))
+   61 :                 - (dx(ut)+dy(vt))*dp
+   62 :           - (dx(du)+dy(dv))*pt +dp*pt*1.e-16)
+   63 :         +on(1,FR,du=1.,dv=1.)+on(4,dv=1.);
+   64 :
+   65 : varf vmatb([df,dg],[ut,vt,pt])=int1d(th,FE)( df*ut + dg*vt );
+   66 :
+   67 : varf vmass([df,dg],[ft,gt])=int1d(th,FE)( 1.e-10*(df*ft + dg*gt) );
+   68 :
+   69 : varf vresv([du,dv,dp],[ut,vt,pt])=
+   70 :  int2d(th)( - ( u0*dx(u0)+v0*dy(u0))*ut
+   71 :             - ( u0*dx(v0)+v0*dy(v0))*vt
+   72 :           - 2*nu*(dx(u0)*dx(ut)+dy(v0)*dy(vt))
+   73 :             - nu*(dx(v0)+dy(u0))*(dy(ut)+dx(vt))
+   74 :             + (dx(ut)+dy(vt))*p0
+   75 :             + (dx(u0)+dy(v0))*pt )
+   76 : + int1d(th,FE)( -f0*ut - g0*vt )
+   77 : +on(1,du=1.-u0,dv=0.-v0)
+   78 : +on(FR,du=0.-u0,dv=0.-v0)
+   79 : +on(4,dv=0.-v0);
+   80 :
+   81 : varf vresb([df,dg],[ft,gt])= int1d(th,FE)( -u0*ft - v0*gt );
+   82 :
+   83 : //////////////////   Mtrix and vectors ////////////////////
+   84 :
+   85 : matrix A,Mbr,P,
+ *** Warning  The identifier P hide a Global identifier
+Mr;
+   86 : fuup [du,dv,dp],[ru,rv,rp];
+   87 : fpp [df,dg],[rf,rg];
+   88 :
+   89 : /////////////// Prolongation matrix (from nf to npdof) /////////////
+   90 :
+   91 : {
+   92 :         int npdof = fpp.ndof;
+   93 :         int knew=0;
+   94 :
+   95 :         varf von([df,dg],[dft,dgt]) = on(FE,df=1,dg=1);
+   96 :         fpp [dfr,dgr];
+   97 :            dfr[]=von(0,fpp,tgv=1);
+   98 :         ndofb=dfr[].sum;
+   99 :         real[int,int] PP(npdof,ndofb);
+  100 :
+  101 :         for(int k=0; k<npdof; k++)
+  102 :         {
+  103 :                 if(dfr[][k]==1)
+  104 :                 {
+  105 :                         PP(k,knew)=1;
+  106 :                         knew+=1;
+  107 :                 };
+  108 :         };
+  109 :
+  110 :         P = PP;
+  111 :
+  112 :         ///////////////  Construction Mass matrix on boundary /////////////
+  113 :
+  114 :         matrix Mb=vmatb(fpp,fuup);
+  115 :         Mbr=Mb*P;
+  116 :         matrix Mass=vmass(fpp,fpp);
+  117 :         matrix Mrt=Mass*P;
+  118 :         Mr=P'*Mrt;
+  119 : };
+  120 :
+  121 :
+  122 : real residu,residuv,residub;
+  123 : int i=0;
+  124 : residu=1.;
+  125 :
+  126 : real[int] sol(ndofv+ndofb),rhs(ndofv+ndofb);
+  127 :
+  128 : cout << "ndofb= " << ndofb << endl;
+  129 :
+  130 : while(sqrt(residu)>1.e-12)
+  131 : {
+  132 :
+  133 :         i+=1;
+  134 :
+  135 :         cout << "Construction vecteur" << endl;
+  136 :      ru[]=vresv(0,fuup,tgv=1);
+  137 :         rf[]=vresb(0,fpp,tgv=1);
+  138 :
+  139 :         residuv=int2d(th)(ru*ru+rv*rv+rp*rp);
+  140 :         residub=int1d(th,FE)(rf*rf+rg*rg);
+  141 :         residu=residuv+residub;
+  142 :
+  143 :         rhs(0:ndofv-1)=ru[];
+  144 :         rhs(ndofv:ndofv+ndofb-1)=P'*rf[];
+  145 :
+  146 :         {
+  147 :          ofstream file("./newton-Re-"+Re+".txt",append);
+  148 :          file << i << " " << sqrt(residuv) << "    " << sqrt(residub) << " " << sqrt(residu) << endl;
+  149 :         };
+  150 :
+  151 :         cout  << i << " " << sqrt(residuv) << "    " << sqrt(residub) << " " << sqrt(residu) << endl;
+  152 :
+  153 :         if( sqrt(residu) <= tolNewton ) break;
+  154 :
+  155 :         cout << "Construction matrice" << endl;
+  156 :
+  157 :         {
+  158 :                 matrix Avv=vmatv(fuup,fuup,tgv=-1);
+  159 :
+  160 :                 A = [ [ Avv  , Mbr ] ,
+  161 :                       [ Mbr' , Mr  ] ];
+  162 :
+  163 :                 //A.thresholding(tolthresh);
+  164 :         };
+  165 :
+  166 :         cout << "Factorisation matrice" << endl;
+  167 :         verbosity=10;
+  168 :         set(A,solver=sparsesolver);
+  169 :         verbosity=0;
+  170 :
+  171 :
+  172 :         cout << "Inversion" << endl;
+  173 :         sol=A^-1*rhs;
+  174 :
+  175 :         du[]=sol(0:ndofv-1);
+  176 :       df[]=P*sol(ndofv:ndofv+ndofb-1);
+  177 :
+  178 :
+  179 :         u0[]+=du[];
+  180 :         f0[]+=df[];
+  181 :
+  182 :         plot(u0,value=1,wait=0,cmm="iter="+i);
+  183 :         };
+  184 :
+  185 : {
+  186 :         ofstream file("./Baseflow1-Re-"+Re+"-L-"+L+"-H-"+H+".txt");
+  187 :         file << u0[];
+  188 :         file << f0[];
+  189 : };
+  190 :
+  191 :
+  192 :  sizestack + 1024 =4476  ( 3452 )
+ 
+  --  mesh:  Nb of Triangles =  21250, Nb of Vertices 10887
+ndofb= 598
+Construction vecteur
+1 0.000348668    2.11451e-018 0.000348668
+Construction matrice
+  -- Block Matrix NxM = 2x2    nxm  =97533x97533 nb  none zero coef. 2840729
+Factorisation matrice
+ Morse matrix GC Precond diag
+ BuildSolverMUMPSseq<double>
+  -- MUMPS LU   n=  97533, peak Mem: 198 Mb sym: 0
+Inversion
+Construction vecteur
+2 2.56729e-005    2.6313e-014 2.56729e-005
+Construction matrice
+Factorisation matrice
+ Morse matrix GC Precond diag
+ BuildSolverMUMPSseq<double>
+  -- MUMPS LU   n=  97533, peak Mem: 198 Mb sym: 0
+Inversion
+Construction vecteur
+3 1.80335e-006    6.37313e-015 1.80335e-006
+Construction matrice
+Factorisation matrice
+ Morse matrix GC Precond diag
+ BuildSolverMUMPSseq<double>
+  -- MUMPS LU   n=  97533, peak Mem: 198 Mb sym: 0
+Inversion
+Construction vecteur
+4 1.4736e-009    4.17113e-017 1.4736e-009
+Construction matrice
+Factorisation matrice
+ Morse matrix GC Precond diag
+ BuildSolverMUMPSseq<double>
+  -- MUMPS LU   n=  97533, peak Mem: 198 Mb sym: 0
+Inversion
+Construction vecteur
+5 1.12909e-010    7.36989e-019 1.12909e-010
+Construction matrice
+Factorisation matrice
+ Morse matrix GC Precond diag
+ BuildSolverMUMPSseq<double>
+  -- MUMPS LU   n=  97533, peak Mem: 198 Mb sym: 0
+Inversion
+Construction vecteur
+6 1.11593e-011    7.14351e-020 1.11593e-011
+ ######## We forget of deleting   9 Nb pointer,   0Bytes  ,  mpirank 0, memory leak =0
+ try getConsole D:\marquet\Documents\Etudes\FSIstability\Two-Meshes\baseflow\BaseFlow-weakbc-reduit-v1.edp

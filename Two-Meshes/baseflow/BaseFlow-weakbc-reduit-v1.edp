@@ -1,0 +1,191 @@
+// Conditions aux limites sur le cylindre: forte
+// Conditions aux limites sur le filament: faible
+
+load "MUMPS_seq"
+load "thresholdings"
+
+// Nombre de Reynolds
+real L=2.0;
+real H=0.06;
+real Re=100;
+real Rep=75;
+int init=1;
+real tolNewton=1.e-10;
+real tolthresh=1.e-12;
+real nu=1./Re;
+
+int FE=22;
+int FR=2;
+
+mesh th=readmesh("../mesh/meshF-L-"+L+"-H-"+H+".msh");
+		
+func Pku=P2;
+func Pkp=P1;
+	
+fespace fuup(th,[Pku,Pku,Pkp]);
+fespace fuu(th,[Pkp,Pkp]);
+fespace fpp(th,[Pkp,Pkp]);
+		
+fuup [u0,v0,p0];
+fpp [f0,g0];
+real us0,vs0;
+us0=0.0; vs0=0.0;
+
+int ndofv=fuup.ndof;
+int ndofb;
+
+///////////////  Initial condition  ////////////////////////
+
+if(init==0)
+{
+[u0,v0,p0]=[1,0,0]; [f0,g0]=[0,0];
+}
+else
+{
+ {
+  ifstream file("./Baseflow1-Re-"+Rep+"-L-"+L+"-H-"+H+".txt");
+  file >> u0[];
+  file >> f0[];
+ };
+ plot(u0,value=1,wait=1);
+};
+
+
+////////  Variational formulation   ////////////////////////
+		
+varf vmatv([du,dv,dp],[ut,vt,pt])=
+ int2d(th)( ( du*dx(u0)+dv*dy(u0) + u0*dx(du)+v0*dy(du) )*ut
+          + ( du*dx(v0)+dv*dy(v0) + u0*dx(dv)+v0*dy(dv) )*vt
+	     +2*nu*(dx(du)*dx(ut)+dy(dv)*dy(vt))
+	     +nu*(dx(dv)+dy(du))*(dy(ut)+dx(vt))
+		- (dx(ut)+dy(vt))*dp
+          - (dx(du)+dy(dv))*pt +dp*pt*1.e-16)
+        +on(1,FR,du=1.,dv=1.)+on(4,dv=1.);
+
+varf vmatb([df,dg],[ut,vt,pt])=int1d(th,FE)( df*ut + dg*vt );
+
+varf vmass([df,dg],[ft,gt])=int1d(th,FE)( 1.e-10*(df*ft + dg*gt) );
+
+varf vresv([du,dv,dp],[ut,vt,pt])=
+ int2d(th)( - ( u0*dx(u0)+v0*dy(u0))*ut
+            - ( u0*dx(v0)+v0*dy(v0))*vt
+          - 2*nu*(dx(u0)*dx(ut)+dy(v0)*dy(vt))
+	    - nu*(dx(v0)+dy(u0))*(dy(ut)+dx(vt))
+	    + (dx(ut)+dy(vt))*p0
+	    + (dx(u0)+dy(v0))*pt )
++ int1d(th,FE)( -f0*ut - g0*vt )
++on(1,du=1.-u0,dv=0.-v0)
++on(FR,du=0.-u0,dv=0.-v0)
++on(4,dv=0.-v0);
+
+varf vresb([df,dg],[ft,gt])= int1d(th,FE)( -u0*ft - v0*gt );
+
+//////////////////   Mtrix and vectors ////////////////////
+
+matrix A,Mbr,P,Mr;
+fuup [du,dv,dp],[ru,rv,rp];
+fpp [df,dg],[rf,rg];
+
+/////////////// Prolongation matrix (from nf to npdof) /////////////
+
+{
+	int npdof = fpp.ndof;	
+        int knew=0;
+
+        varf von([df,dg],[dft,dgt]) = on(FE,df=1,dg=1);
+        fpp [dfr,dgr];
+	   dfr[]=von(0,fpp,tgv=1);
+        ndofb=dfr[].sum;
+        real[int,int] PP(npdof,ndofb);
+
+        for(int k=0; k<npdof; k++)
+        {
+                if(dfr[][k]==1)
+                {
+                        PP(k,knew)=1;
+                        knew+=1;
+                };
+        };
+        
+	P = PP;
+
+	///////////////  Construction Mass matrix on boundary /////////////
+
+	matrix Mb=vmatb(fpp,fuup);
+	Mbr=Mb*P;
+	matrix Mass=vmass(fpp,fpp);
+	matrix Mrt=Mass*P;
+	Mr=P'*Mrt;
+};
+
+
+real residu,residuv,residub;
+int i=0;
+residu=1.;
+
+real[int] sol(ndofv+ndofb),rhs(ndofv+ndofb);
+
+cout << "ndofb= " << ndofb << endl;
+
+while(sqrt(residu)>1.e-12)
+{
+
+	i+=1;
+
+	cout << "Construction vecteur" << endl;
+     ru[]=vresv(0,fuup,tgv=1);
+	rf[]=vresb(0,fpp,tgv=1);
+	
+	residuv=int2d(th)(ru*ru+rv*rv+rp*rp);
+	residub=int1d(th,FE)(rf*rf+rg*rg);
+	residu=residuv+residub;
+	
+	rhs(0:ndofv-1)=ru[];
+	rhs(ndofv:ndofv+ndofb-1)=P'*rf[];
+
+	{
+         ofstream file("./newton-Re-"+Re+".txt",append);
+         file << i << " " << sqrt(residuv) << "    " << sqrt(residub) << " " << sqrt(residu) << endl;
+        };
+
+	cout  << i << " " << sqrt(residuv) << "    " << sqrt(residub) << " " << sqrt(residu) << endl;
+
+	if( sqrt(residu) <= tolNewton ) break;
+
+	cout << "Construction matrice" << endl;
+
+	{	
+		matrix Avv=vmatv(fuup,fuup,tgv=-1);
+		
+		A = [ [ Avv  , Mbr ] , 
+		      [ Mbr' , Mr  ] ]; 
+	
+		//A.thresholding(tolthresh);	      	 
+	};
+		
+	cout << "Factorisation matrice" << endl;
+	verbosity=10;
+	set(A,solver=sparsesolver);
+	verbosity=0;
+
+
+	cout << "Inversion" << endl;
+	sol=A^-1*rhs;
+
+	du[]=sol(0:ndofv-1);
+      df[]=P*sol(ndofv:ndofv+ndofb-1);
+
+			
+	u0[]+=du[];
+	f0[]+=df[];
+
+	plot(u0,value=1,wait=0,cmm="iter="+i);
+	};
+
+{
+	ofstream file("./Baseflow1-Re-"+Re+"-L-"+L+"-H-"+H+".txt");
+	file << u0[];
+	file << f0[];	
+};
+	
+
